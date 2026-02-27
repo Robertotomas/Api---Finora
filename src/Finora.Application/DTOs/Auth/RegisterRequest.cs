@@ -10,9 +10,9 @@ public record RegisterRequest
     public string Email { get; init; } = string.Empty;
 
     [Required]
-    [MinLength(8, ErrorMessage = "Password must be at least 8 characters.")]
-    [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$",
-        ErrorMessage = "Password must contain uppercase, lowercase, number and special character.")]
+    [MinLength(8, ErrorMessage = "A password deve ter pelo menos 8 caracteres.")]
+    [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$",
+        ErrorMessage = "A password deve conter maiúscula, minúscula e número.")]
     public string Password { get; init; } = string.Empty;
 
     [Required]
