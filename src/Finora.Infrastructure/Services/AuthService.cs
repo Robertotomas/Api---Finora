@@ -5,6 +5,7 @@ using Finora.Application.DTOs.Auth;
 using Finora.Application.Interfaces;
 using Finora.Application.Options;
 using Finora.Domain.Entities;
+using Finora.Domain.Enums;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
@@ -13,11 +14,13 @@ namespace Finora.Infrastructure.Services;
 public class AuthService : IAuthService
 {
     private readonly IUserRepository _userRepository;
+    private readonly IHouseholdRepository _householdRepository;
     private readonly JwtOptions _jwtOptions;
 
-    public AuthService(IUserRepository userRepository, IOptions<JwtOptions> jwtOptions)
+    public AuthService(IUserRepository userRepository, IHouseholdRepository householdRepository, IOptions<JwtOptions> jwtOptions)
     {
         _userRepository = userRepository;
+        _householdRepository = householdRepository;
         _jwtOptions = jwtOptions.Value;
     }
 
@@ -26,6 +29,15 @@ public class AuthService : IAuthService
         if (await _userRepository.ExistsByEmailAsync(request.Email, cancellationToken))
             throw new InvalidOperationException("User with this email already exists.");
 
+        var household = new Household
+        {
+            Id = Guid.NewGuid(),
+            Type = HouseholdType.Individual,
+            Name = $"{request.FirstName.Trim()}'s Household",
+            CreatedAt = DateTime.UtcNow
+        };
+        await _householdRepository.CreateAsync(household, cancellationToken);
+
         var user = new User
         {
             Id = Guid.NewGuid(),
@@ -33,6 +45,7 @@ public class AuthService : IAuthService
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, BCrypt.Net.BCrypt.GenerateSalt(12)),
             FirstName = request.FirstName.Trim(),
             LastName = request.LastName.Trim(),
+            HouseholdId = household.Id,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -68,7 +81,8 @@ public class AuthService : IAuthService
                 Id = user.Id,
                 Email = user.Email,
                 FirstName = user.FirstName,
-                LastName = user.LastName
+                LastName = user.LastName,
+                HouseholdId = user.HouseholdId
             }
         };
 
@@ -80,13 +94,15 @@ public class AuthService : IAuthService
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtOptions.Secret));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
-            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.Email, user.Email),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString())
+            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new(JwtRegisteredClaimNames.Email, user.Email),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(ClaimTypes.NameIdentifier, user.Id.ToString())
         };
+        if (user.HouseholdId.HasValue)
+            claims.Add(new Claim("household_id", user.HouseholdId.Value.ToString()));
 
         var token = new JwtSecurityToken(
             issuer: _jwtOptions.Issuer,

@@ -16,7 +16,9 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IHouseholdService, HouseholdService>();
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IHouseholdRepository, HouseholdRepository>();
         return services;
     }
 
