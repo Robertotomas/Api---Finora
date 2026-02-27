@@ -1,23 +1,41 @@
+using Finora.Api.Extensions;
+using Finora.Api.Middleware;
+using Finora.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-builder.Services.AddControllers();
+// appsettings.Local.json overrides (optional, in .gitignore)
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddControllers();
+builder.Services.AddApplicationServices();
+builder.Services.AddDatabase(builder.Configuration);
+builder.Services.AddJwtAuthentication(builder.Configuration);
+builder.Services.AddSwaggerWithJwt();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-app.UseHttpsRedirection();
+app.UseSwagger();
+app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Finora API v1"));
+
+if (!app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
+
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+// Redirect root to Swagger
+app.MapGet("/", () => Results.Redirect("/swagger"));
+
+// Apply pending migrations on startup
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await db.Database.MigrateAsync();
+}
 
 app.Run();

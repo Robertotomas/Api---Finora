@@ -31,6 +31,22 @@ bld/
 # Rider
 .idea/
 
-# User secrets
+# User secrets / local overrides (never commit)
+appsettings.Local.json
 appsettings.*.local.json
 secrets.json
+
+# Test / coverage
+TestResults/
+*.trx
+*.coverage
+coverage/
+*.lcov
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Cursor / IDE
+.cursor
