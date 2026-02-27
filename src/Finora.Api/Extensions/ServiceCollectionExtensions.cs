@@ -19,7 +19,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IHouseholdService, HouseholdService>();
         services.AddScoped<IAccountService, AccountService>();
         services.AddScoped<ITransactionService, TransactionService>();
+        services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IDashboardRepository, DashboardRepository>();
         services.AddScoped<IHouseholdRepository, HouseholdRepository>();
         services.AddScoped<IAccountRepository, AccountRepository>();
         services.AddScoped<ITransactionRepository, TransactionRepository>();
