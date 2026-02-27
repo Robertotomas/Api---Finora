@@ -29,6 +29,14 @@ public class UserRepository : IUserRepository
             .FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<User>> GetByHouseholdIdAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        return await _context.Users
+            .AsNoTracking()
+            .Where(u => u.HouseholdId == householdId)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<User?> GetByIdTrackedAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return await _context.Users

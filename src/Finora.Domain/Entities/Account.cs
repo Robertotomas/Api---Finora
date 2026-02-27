@@ -12,4 +12,6 @@ public class Account : BaseEntity
 
     public Guid HouseholdId { get; set; }
     public Household Household { get; set; } = null!;
+
+    public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 }

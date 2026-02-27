@@ -51,6 +51,28 @@ public class HouseholdController : ControllerBase
     }
 
     /// <summary>
+    /// Get household members (for couples).
+    /// </summary>
+    [HttpGet("members")]
+    [ProducesResponseType(typeof(IReadOnlyList<HouseholdMemberDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<HouseholdMemberDto>>> GetMembers(CancellationToken cancellationToken)
+    {
+        if (UserId == null)
+            return NotFound();
+
+        var householdId = User.FindFirstValue("household_id");
+        if (string.IsNullOrEmpty(householdId) || !Guid.TryParse(householdId, out var id))
+        {
+            var household = await _householdService.GetOrCreateForUserAsync(UserId.Value, cancellationToken);
+            if (household == null) return NotFound();
+            id = household.Id;
+        }
+
+        var members = await _householdService.GetMembersAsync(id, UserId.Value, cancellationToken);
+        return Ok(members);
+    }
+
+    /// <summary>
     /// Update current user's household (authorization: user must belong to household).
     /// </summary>
     [HttpPut("{id:guid}")]

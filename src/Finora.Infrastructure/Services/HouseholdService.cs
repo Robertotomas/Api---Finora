@@ -25,6 +25,22 @@ public class HouseholdService : IHouseholdService
         return household == null ? null : ToDto(household);
     }
 
+    public async Task<IReadOnlyList<HouseholdMemberDto>> GetMembersAsync(Guid householdId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user == null || !user.HouseholdId.HasValue || user.HouseholdId.Value != householdId)
+            return Array.Empty<HouseholdMemberDto>();
+
+        var members = await _userRepository.GetByHouseholdIdAsync(householdId, cancellationToken);
+        return members.Select(u => new HouseholdMemberDto
+        {
+            Id = u.Id,
+            FirstName = u.FirstName,
+            LastName = u.LastName,
+            Email = u.Email
+        }).ToList();
+    }
+
     public async Task<HouseholdDto?> GetOrCreateForUserAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         var user = await _userRepository.GetByIdTrackedAsync(userId, cancellationToken);
