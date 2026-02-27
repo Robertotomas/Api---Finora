@@ -17,8 +17,10 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IHouseholdService, HouseholdService>();
+        services.AddScoped<IAccountService, AccountService>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IHouseholdRepository, HouseholdRepository>();
+        services.AddScoped<IAccountRepository, AccountRepository>();
         return services;
     }
 
