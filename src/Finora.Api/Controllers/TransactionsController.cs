@@ -52,14 +52,14 @@ public class TransactionsController : ControllerBase
     /// Get transactions for the current user's household.
     /// </summary>
     /// <param name="accountId">Optional filter by account.</param>
-    /// <param name="from">Optional start date (inclusive).</param>
-    /// <param name="to">Optional end date (inclusive).</param>
+    /// <param name="from">Optional start date (yyyy-MM-dd, inclusive).</param>
+    /// <param name="to">Optional end date (yyyy-MM-dd, inclusive).</param>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<TransactionDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<TransactionDto>>> GetAll(
         [FromQuery] Guid? accountId,
-        [FromQuery] DateTime? from,
-        [FromQuery] DateTime? to,
+        [FromQuery] string? from,
+        [FromQuery] string? to,
         CancellationToken cancellationToken)
     {
         if (UserId == null)
@@ -69,7 +69,14 @@ public class TransactionsController : ControllerBase
         if (householdId == null)
             return NotFound();
 
-        var transactions = await _transactionService.GetByHouseholdAsync(householdId.Value, UserId!.Value, accountId, from, to, cancellationToken);
+        DateTime? fromDate = null;
+        DateTime? toDate = null;
+        if (!string.IsNullOrWhiteSpace(from) && DateTime.TryParse(from, out var fd))
+            fromDate = DateTime.SpecifyKind(fd.Date, DateTimeKind.Utc);
+        if (!string.IsNullOrWhiteSpace(to) && DateTime.TryParse(to, out var td))
+            toDate = DateTime.SpecifyKind(td.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
+
+        var transactions = await _transactionService.GetByHouseholdAsync(householdId.Value, UserId!.Value, accountId, fromDate, toDate, cancellationToken);
         return Ok(transactions);
     }
 
