@@ -1,3 +1,4 @@
+using Finora.Application.Interfaces;
 using Finora.Domain.Enums;
 
 namespace Finora.Application.DTOs.Dashboard;
@@ -14,6 +15,7 @@ public record DashboardDto
     public IReadOnlyList<ExpenseByCategoryDto> ExpensesByCategory { get; init; } = Array.Empty<ExpenseByCategoryDto>();
     public IReadOnlyList<IncomeByCategoryDto> IncomeByCategory { get; init; } = Array.Empty<IncomeByCategoryDto>();
     public IReadOnlyList<MonthlyTrendDto> MonthlyTrend { get; init; } = Array.Empty<MonthlyTrendDto>();
+    public IReadOnlyList<AccountBalanceAtDate> AccountBalancesAtPeriod { get; init; } = Array.Empty<AccountBalanceAtDate>();
 }
 
 public record IncomeByCategoryDto

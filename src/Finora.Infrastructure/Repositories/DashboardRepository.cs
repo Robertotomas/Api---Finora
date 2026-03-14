@@ -22,6 +22,37 @@ public class DashboardRepository : IDashboardRepository
             .SumAsync(a => a.Balance, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<AccountBalanceAtDate>> GetAccountBalancesAtEndOfMonthAsync(Guid householdId, int year, int month, CancellationToken cancellationToken = default)
+    {
+        var firstDayAfterMonth = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(1);
+
+        var accounts = await _context.Accounts
+            .AsNoTracking()
+            .Where(a => a.HouseholdId == householdId)
+            .Select(a => new { a.Id, a.Name, a.Type, a.Currency, a.Balance })
+            .ToListAsync(cancellationToken);
+
+        var deltaByAccount = await _context.Transactions
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId && t.Date >= firstDayAfterMonth)
+            .GroupBy(t => t.AccountId)
+            .Select(g => new
+            {
+                AccountId = g.Key,
+                Delta = g.Sum(t => t.Type == TransactionType.Income ? t.Amount : -t.Amount)
+            })
+            .ToListAsync(cancellationToken);
+
+        var deltaDict = deltaByAccount.ToDictionary(x => x.AccountId, x => x.Delta);
+
+        return accounts.Select(a =>
+        {
+            var delta = deltaDict.GetValueOrDefault(a.Id, 0m);
+            var balanceAtEnd = a.Balance - delta;
+            return new AccountBalanceAtDate(a.Id, a.Name, (int)a.Type, a.Currency ?? "EUR", balanceAtEnd);
+        }).ToList();
+    }
+
     public async Task<decimal> GetMonthlyIncomeAsync(Guid householdId, int year, int month, CancellationToken cancellationToken = default)
     {
         var start = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);

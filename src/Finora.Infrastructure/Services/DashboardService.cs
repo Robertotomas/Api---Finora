@@ -30,7 +30,8 @@ public class DashboardService : IDashboardService
         var targetMonth = month ?? now.Month;
 
         // DbContext is not thread-safe; run queries sequentially
-        var totalBalance = await _dashboardRepository.GetTotalBalanceAsync(householdId, cancellationToken);
+        var accountBalancesAtPeriod = await _dashboardRepository.GetAccountBalancesAtEndOfMonthAsync(householdId, targetYear, targetMonth, cancellationToken);
+        var totalBalance = accountBalancesAtPeriod.Sum(a => a.Balance);
         var monthlyIncome = await _dashboardRepository.GetMonthlyIncomeAsync(householdId, targetYear, targetMonth, cancellationToken);
         var monthlyExpenses = await _dashboardRepository.GetMonthlyExpensesAsync(householdId, targetYear, targetMonth, cancellationToken);
 
@@ -67,7 +68,8 @@ public class DashboardService : IDashboardService
             MonthlyExpenses = monthlyExpenses,
             ExpensesByCategory = categoryDtos,
             IncomeByCategory = incomeCategoryDtos,
-            MonthlyTrend = trendDtos
+            MonthlyTrend = trendDtos,
+            AccountBalancesAtPeriod = accountBalancesAtPeriod
         };
     }
 

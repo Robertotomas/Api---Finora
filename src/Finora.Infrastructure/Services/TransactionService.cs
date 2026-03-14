@@ -71,6 +71,12 @@ public class TransactionService : ITransactionService
             transaction.Splits.Add(new TransactionSplit { TransactionId = transaction.Id, UserId = uid, Percentage = pct });
 
         await _transactionRepository.CreateAsync(transaction, cancellationToken);
+
+        account.Balance = request.Type == TransactionType.Income
+            ? account.Balance + request.Amount
+            : account.Balance - request.Amount;
+        await _accountRepository.UpdateAsync(account, cancellationToken);
+
         return ToDto(transaction);
     }
 
@@ -90,6 +96,10 @@ public class TransactionService : ITransactionService
         if (splitData == null)
             return null;
 
+        var oldAccountId = transaction.AccountId;
+        var oldType = transaction.Type;
+        var oldAmount = transaction.Amount;
+
         transaction.AccountId = request.AccountId;
         transaction.Type = request.Type;
         transaction.Category = request.Category;
@@ -103,6 +113,29 @@ public class TransactionService : ITransactionService
             transaction.Splits.Add(new TransactionSplit { TransactionId = transaction.Id, UserId = uid, Percentage = pct });
 
         await _transactionRepository.UpdateAsync(transaction, cancellationToken);
+
+        if (oldAccountId != request.AccountId)
+        {
+            var oldAccount = await _accountRepository.GetByIdAsync(oldAccountId, cancellationToken);
+            if (oldAccount != null)
+            {
+                oldAccount.Balance = oldType == TransactionType.Income
+                    ? oldAccount.Balance - oldAmount
+                    : oldAccount.Balance + oldAmount;
+                await _accountRepository.UpdateAsync(oldAccount, cancellationToken);
+            }
+            account.Balance = request.Type == TransactionType.Income
+                ? account.Balance + request.Amount
+                : account.Balance - request.Amount;
+            await _accountRepository.UpdateAsync(account, cancellationToken);
+        }
+        else
+        {
+            account.Balance += request.Type == TransactionType.Income ? request.Amount : -request.Amount;
+            account.Balance -= oldType == TransactionType.Income ? oldAmount : -oldAmount;
+            await _accountRepository.UpdateAsync(account, cancellationToken);
+        }
+
         return ToDto(transaction);
     }
 
@@ -113,6 +146,15 @@ public class TransactionService : ITransactionService
 
         if (!await UserBelongsToHouseholdAsync(userId, transaction.HouseholdId, cancellationToken))
             return false;
+
+        var account = await _accountRepository.GetByIdAsync(transaction.AccountId, cancellationToken);
+        if (account != null)
+        {
+            account.Balance = transaction.Type == TransactionType.Income
+                ? account.Balance - transaction.Amount
+                : account.Balance + transaction.Amount;
+            await _accountRepository.UpdateAsync(account, cancellationToken);
+        }
 
         await _transactionRepository.DeleteAsync(transaction, cancellationToken);
         return true;
