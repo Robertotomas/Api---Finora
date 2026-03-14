@@ -59,6 +59,14 @@ public class RecurringTransactionService : IRecurringTransactionService
         return await _repository.GetRecurringExpensesByCategoryAsync(householdId, year, month, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<(int Category, decimal Amount)>> GetRecurringIncomeByCategoryAsync(Guid householdId, Guid userId, int year, int month, CancellationToken cancellationToken = default)
+    {
+        if (!await UserBelongsToHouseholdAsync(userId, householdId, cancellationToken))
+            return Array.Empty<(int, decimal)>();
+
+        return await _repository.GetRecurringIncomeByCategoryAsync(householdId, year, month, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<(int Year, int Month, decimal Income, decimal Expenses)>> GetAmountsByMonthAsync(Guid householdId, Guid userId, int startYear, int startMonth, int count, CancellationToken cancellationToken = default)
     {
         if (!await UserBelongsToHouseholdAsync(userId, householdId, cancellationToken))

@@ -12,6 +12,7 @@ public interface IRecurringTransactionRepository
     /// <summary>Gets income and expenses totals from recurring for each month in the range.</summary>
     Task<IReadOnlyList<(int Year, int Month, decimal Income, decimal Expenses)>> GetAmountsByMonthAsync(Guid householdId, int startYear, int startMonth, int count, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<(int Category, decimal Amount)>> GetRecurringExpensesByCategoryAsync(Guid householdId, int year, int month, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<(int Category, decimal Amount)>> GetRecurringIncomeByCategoryAsync(Guid householdId, int year, int month, CancellationToken cancellationToken = default);
     Task<RecurringTransaction> CreateAsync(RecurringTransaction entity, CancellationToken cancellationToken = default);
     Task<RecurringTransaction> UpdateAsync(RecurringTransaction entity, CancellationToken cancellationToken = default);
 }

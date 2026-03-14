@@ -95,6 +95,18 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
             .ToList();
     }
 
+    public async Task<IReadOnlyList<(int Category, decimal Amount)>> GetRecurringIncomeByCategoryAsync(
+        Guid householdId, int year, int month, CancellationToken cancellationToken = default)
+    {
+        var active = await GetActiveForMonthAsync(householdId, year, month, cancellationToken);
+        return active
+            .Where(r => r.Type == TransactionType.Income)
+            .GroupBy(r => (int)r.Category)
+            .Select(g => ((int)g.Key, g.Sum(r => r.Amount)))
+            .OrderByDescending(x => x.Item2)
+            .ToList();
+    }
+
     public async Task<RecurringTransaction> CreateAsync(RecurringTransaction entity, CancellationToken cancellationToken = default)
     {
         _context.RecurringTransactions.Add(entity);

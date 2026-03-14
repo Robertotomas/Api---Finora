@@ -12,7 +12,16 @@ public record DashboardDto
     public decimal MonthlyExpenses { get; init; }
     public decimal MonthlySavings => MonthlyIncome - MonthlyExpenses;
     public IReadOnlyList<ExpenseByCategoryDto> ExpensesByCategory { get; init; } = Array.Empty<ExpenseByCategoryDto>();
+    public IReadOnlyList<IncomeByCategoryDto> IncomeByCategory { get; init; } = Array.Empty<IncomeByCategoryDto>();
     public IReadOnlyList<MonthlyTrendDto> MonthlyTrend { get; init; } = Array.Empty<MonthlyTrendDto>();
+}
+
+public record IncomeByCategoryDto
+{
+    public TransactionCategory Category { get; init; }
+    public string CategoryName { get; init; } = string.Empty;
+    public decimal Amount { get; init; }
+    public decimal Percentage { get; init; }
 }
 
 public record ExpenseByCategoryDto

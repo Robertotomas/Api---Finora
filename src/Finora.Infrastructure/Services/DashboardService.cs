@@ -42,6 +42,10 @@ public class DashboardService : IDashboardService
         var recurringByCategory = await _recurringService.GetRecurringExpensesByCategoryAsync(householdId, userId, targetYear, targetMonth, cancellationToken);
         var mergedCategories = MergeExpensesByCategory(expensesByCategory, recurringByCategory);
 
+        var incomeByCategory = await _dashboardRepository.GetIncomeByCategoryAsync(householdId, targetYear, targetMonth, cancellationToken);
+        var recurringIncomeByCategory = await _recurringService.GetRecurringIncomeByCategoryAsync(householdId, userId, targetYear, targetMonth, cancellationToken);
+        var mergedIncomeCategories = MergeExpensesByCategory(incomeByCategory, recurringIncomeByCategory);
+
         var monthlyTrend = await _dashboardRepository.GetMonthlyTrendAsync(householdId, trendMonths, cancellationToken);
 
         var startDate = now.AddMonths(-(trendMonths - 1));
@@ -50,6 +54,7 @@ public class DashboardService : IDashboardService
         var trendFiltered = trendWithRecurring.Where(x => x.Income > 0 || x.Expenses > 0).ToList();
 
         var categoryDtos = BuildExpensesByCategory(mergedCategories, monthlyExpenses);
+        var incomeCategoryDtos = BuildIncomeByCategory(mergedIncomeCategories, monthlyIncome);
         var trendDtos = BuildMonthlyTrend(trendFiltered);
 
         return new DashboardDto
@@ -61,6 +66,7 @@ public class DashboardService : IDashboardService
             MonthlyIncome = monthlyIncome,
             MonthlyExpenses = monthlyExpenses,
             ExpensesByCategory = categoryDtos,
+            IncomeByCategory = incomeCategoryDtos,
             MonthlyTrend = trendDtos
         };
     }
@@ -107,6 +113,7 @@ public class DashboardService : IDashboardService
             MonthlyIncome = 0,
             MonthlyExpenses = 0,
             ExpensesByCategory = Array.Empty<ExpenseByCategoryDto>(),
+            IncomeByCategory = Array.Empty<IncomeByCategoryDto>(),
             MonthlyTrend = Array.Empty<MonthlyTrendDto>()
         };
     }
@@ -117,6 +124,20 @@ public class DashboardService : IDashboardService
 
         var total = totalExpenses > 0 ? totalExpenses : 1m;
         return data.Select(x => new ExpenseByCategoryDto
+        {
+            Category = (TransactionCategory)x.Category,
+            CategoryName = GetCategoryName((TransactionCategory)x.Category),
+            Amount = x.Amount,
+            Percentage = Math.Round(x.Amount / total * 100, 1)
+        }).ToList();
+    }
+
+    private static IReadOnlyList<IncomeByCategoryDto> BuildIncomeByCategory(IReadOnlyList<(int Category, decimal Amount)> data, decimal totalIncome)
+    {
+        if (data.Count == 0) return Array.Empty<IncomeByCategoryDto>();
+
+        var total = totalIncome > 0 ? totalIncome : 1m;
+        return data.Select(x => new IncomeByCategoryDto
         {
             Category = (TransactionCategory)x.Category,
             CategoryName = GetCategoryName((TransactionCategory)x.Category),

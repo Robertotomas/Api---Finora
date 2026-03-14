@@ -60,6 +60,22 @@ public class DashboardRepository : IDashboardRepository
         return data.Select(x => (x.Category, x.Amount)).ToList();
     }
 
+    public async Task<IReadOnlyList<(int Category, decimal Amount)>> GetIncomeByCategoryAsync(Guid householdId, int year, int month, CancellationToken cancellationToken = default)
+    {
+        var start = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var end = start.AddMonths(1);
+
+        var data = await _context.Transactions
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId && t.Type == TransactionType.Income && t.Date >= start && t.Date < end)
+            .GroupBy(t => t.Category)
+            .Select(g => new { Category = (int)g.Key, Amount = g.Sum(t => t.Amount) })
+            .OrderByDescending(x => x.Amount)
+            .ToListAsync(cancellationToken);
+
+        return data.Select(x => (x.Category, x.Amount)).ToList();
+    }
+
     public async Task<IReadOnlyList<(int Year, int Month, decimal Income, decimal Expenses)>> GetMonthlyTrendAsync(Guid householdId, int monthsBack, CancellationToken cancellationToken = default)
     {
         var endDate = DateTime.UtcNow;
