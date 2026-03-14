@@ -1,3 +1,5 @@
+using Finora.Domain.Enums;
+
 namespace Finora.Application.DTOs.Auth;
 
 public record AuthResponse
@@ -14,5 +16,6 @@ public record UserDto
     public string Email { get; init; } = string.Empty;
     public string FirstName { get; init; } = string.Empty;
     public string LastName { get; init; } = string.Empty;
+    public Gender? Gender { get; init; }
     public Guid? HouseholdId { get; init; }
 }

@@ -37,6 +37,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.PasswordHash).HasMaxLength(500);
             entity.Property(e => e.FirstName).HasMaxLength(100);
             entity.Property(e => e.LastName).HasMaxLength(100);
+            entity.Property(e => e.Gender).HasConversion<int>().IsRequired(false);
 
             entity.HasOne(e => e.Household)
                 .WithMany(h => h.Users)

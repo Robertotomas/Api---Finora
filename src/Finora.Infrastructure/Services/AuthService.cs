@@ -45,6 +45,7 @@ public class AuthService : IAuthService
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, BCrypt.Net.BCrypt.GenerateSalt(12)),
             FirstName = request.FirstName.Trim(),
             LastName = request.LastName.Trim(),
+            Gender = request.Gender,
             HouseholdId = household.Id,
             CreatedAt = DateTime.UtcNow
         };
@@ -82,6 +83,7 @@ public class AuthService : IAuthService
                 Email = user.Email,
                 FirstName = user.FirstName,
                 LastName = user.LastName,
+                Gender = user.Gender,
                 HouseholdId = user.HouseholdId
             }
         };
