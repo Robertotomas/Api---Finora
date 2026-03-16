@@ -26,32 +26,94 @@ public class DashboardService : IDashboardService
             return CreateEmptyDashboard(year, month);
 
         var now = DateTime.UtcNow;
-        var targetYear = year ?? now.Year;
-        var targetMonth = month ?? now.Month;
+        // year=0 means "all time" - must be handled before any DateTime(year, ...) which throws for year 0
+        var useAllTime = year is 0;
+        var targetYear = useAllTime ? now.Year : (year ?? now.Year);
+        var useFullYear = !month.HasValue || month.Value == 0;
 
-        // DbContext is not thread-safe; run queries sequentially
-        var accountBalancesAtPeriod = await _dashboardRepository.GetAccountBalancesAtEndOfMonthAsync(householdId, targetYear, targetMonth, cancellationToken);
+        decimal monthlyIncome;
+        decimal monthlyExpenses;
+        IReadOnlyList<AccountBalanceAtDate> accountBalancesAtPeriod;
+        IReadOnlyList<(int Category, decimal Amount)> mergedCategories;
+        IReadOnlyList<(int Category, decimal Amount)> mergedIncomeCategories;
+
+        if (useAllTime)
+        {
+            accountBalancesAtPeriod = await _dashboardRepository.GetAccountBalancesNowAsync(householdId, cancellationToken);
+            monthlyIncome = await _dashboardRepository.GetTotalIncomeAsync(householdId, cancellationToken);
+            monthlyExpenses = await _dashboardRepository.GetTotalExpensesAsync(householdId, cancellationToken);
+            mergedCategories = await _dashboardRepository.GetTotalExpensesByCategoryAsync(householdId, cancellationToken);
+            mergedIncomeCategories = await _dashboardRepository.GetTotalIncomeByCategoryAsync(householdId, cancellationToken);
+        }
+        else if (useFullYear)
+        {
+            accountBalancesAtPeriod = await _dashboardRepository.GetAccountBalancesAtEndOfYearAsync(householdId, targetYear, cancellationToken);
+            monthlyIncome = await _dashboardRepository.GetYearlyIncomeAsync(householdId, targetYear, cancellationToken);
+            monthlyExpenses = await _dashboardRepository.GetYearlyExpensesAsync(householdId, targetYear, cancellationToken);
+
+            var recurringTotal = 0m;
+            var recurringExpTotal = 0m;
+            for (var m = 1; m <= 12; m++)
+            {
+                var (ri, re) = await _recurringService.GetAmountsForMonthAsync(householdId, userId, targetYear, m, cancellationToken);
+                recurringTotal += ri;
+                recurringExpTotal += re;
+            }
+            monthlyIncome += recurringTotal;
+            monthlyExpenses += recurringExpTotal;
+
+            var expensesByCategory = await _dashboardRepository.GetYearlyExpensesByCategoryAsync(householdId, targetYear, cancellationToken);
+            var recurringByCategoryDict = new Dictionary<int, decimal>();
+            for (var m = 1; m <= 12; m++)
+            {
+                var rc = await _recurringService.GetRecurringExpensesByCategoryAsync(householdId, userId, targetYear, m, cancellationToken);
+                foreach (var (cat, amt) in rc)
+                    recurringByCategoryDict[cat] = recurringByCategoryDict.GetValueOrDefault(cat) + amt;
+            }
+            var recurringByCategory = recurringByCategoryDict.Select(x => (x.Key, x.Value)).ToList();
+            mergedCategories = MergeExpensesByCategory(expensesByCategory, recurringByCategory);
+
+            var incomeByCategory = await _dashboardRepository.GetYearlyIncomeByCategoryAsync(householdId, targetYear, cancellationToken);
+            var recurringIncomeByCategoryDict = new Dictionary<int, decimal>();
+            for (var m = 1; m <= 12; m++)
+            {
+                var ric = await _recurringService.GetRecurringIncomeByCategoryAsync(householdId, userId, targetYear, m, cancellationToken);
+                foreach (var (cat, amt) in ric)
+                    recurringIncomeByCategoryDict[cat] = recurringIncomeByCategoryDict.GetValueOrDefault(cat) + amt;
+            }
+            var recurringIncomeByCategory = recurringIncomeByCategoryDict.Select(x => (x.Key, x.Value)).ToList();
+            mergedIncomeCategories = MergeExpensesByCategory(incomeByCategory, recurringIncomeByCategory);
+        }
+        else
+        {
+            var targetMonth = month!.Value;
+            accountBalancesAtPeriod = await _dashboardRepository.GetAccountBalancesAtEndOfMonthAsync(householdId, targetYear, targetMonth, cancellationToken);
+            monthlyIncome = await _dashboardRepository.GetMonthlyIncomeAsync(householdId, targetYear, targetMonth, cancellationToken);
+            monthlyExpenses = await _dashboardRepository.GetMonthlyExpensesAsync(householdId, targetYear, targetMonth, cancellationToken);
+
+            var (recurringIncome, recurringExpenses) = await _recurringService.GetAmountsForMonthAsync(householdId, userId, targetYear, targetMonth, cancellationToken);
+            monthlyIncome += recurringIncome;
+            monthlyExpenses += recurringExpenses;
+
+            var expensesByCategory = await _dashboardRepository.GetExpensesByCategoryAsync(householdId, targetYear, targetMonth, cancellationToken);
+            var recurringByCategory = await _recurringService.GetRecurringExpensesByCategoryAsync(householdId, userId, targetYear, targetMonth, cancellationToken);
+            mergedCategories = MergeExpensesByCategory(expensesByCategory, recurringByCategory);
+
+            var incomeByCategory = await _dashboardRepository.GetIncomeByCategoryAsync(householdId, targetYear, targetMonth, cancellationToken);
+            var recurringIncomeByCategory = await _recurringService.GetRecurringIncomeByCategoryAsync(householdId, userId, targetYear, targetMonth, cancellationToken);
+            mergedIncomeCategories = MergeExpensesByCategory(incomeByCategory, recurringIncomeByCategory);
+        }
+
         var totalBalance = accountBalancesAtPeriod.Sum(a => a.Balance);
-        var monthlyIncome = await _dashboardRepository.GetMonthlyIncomeAsync(householdId, targetYear, targetMonth, cancellationToken);
-        var monthlyExpenses = await _dashboardRepository.GetMonthlyExpensesAsync(householdId, targetYear, targetMonth, cancellationToken);
 
-        var (recurringIncome, recurringExpenses) = await _recurringService.GetAmountsForMonthAsync(householdId, userId, targetYear, targetMonth, cancellationToken);
-        monthlyIncome += recurringIncome;
-        monthlyExpenses += recurringExpenses;
+        var effectiveTrendMonths = useAllTime ? Math.Max(trendMonths, 60) : trendMonths;
+        var monthlyTrend = await _dashboardRepository.GetMonthlyTrendAsync(householdId, effectiveTrendMonths, cancellationToken);
 
-        var expensesByCategory = await _dashboardRepository.GetExpensesByCategoryAsync(householdId, targetYear, targetMonth, cancellationToken);
-        var recurringByCategory = await _recurringService.GetRecurringExpensesByCategoryAsync(householdId, userId, targetYear, targetMonth, cancellationToken);
-        var mergedCategories = MergeExpensesByCategory(expensesByCategory, recurringByCategory);
-
-        var incomeByCategory = await _dashboardRepository.GetIncomeByCategoryAsync(householdId, targetYear, targetMonth, cancellationToken);
-        var recurringIncomeByCategory = await _recurringService.GetRecurringIncomeByCategoryAsync(householdId, userId, targetYear, targetMonth, cancellationToken);
-        var mergedIncomeCategories = MergeExpensesByCategory(incomeByCategory, recurringIncomeByCategory);
-
-        var monthlyTrend = await _dashboardRepository.GetMonthlyTrendAsync(householdId, trendMonths, cancellationToken);
-
-        var startDate = now.AddMonths(-(trendMonths - 1));
-        var recurringByMonth = await _recurringService.GetAmountsByMonthAsync(householdId, userId, startDate.Year, startDate.Month, trendMonths, cancellationToken);
-        var trendWithRecurring = MergeTrendWithRecurring(monthlyTrend, recurringByMonth);
+        var startDate = now.AddMonths(-(effectiveTrendMonths - 1));
+        var recurringByMonth = useAllTime
+            ? new List<(int Year, int Month, decimal Income, decimal Expenses)>()
+            : await _recurringService.GetAmountsByMonthAsync(householdId, userId, startDate.Year, startDate.Month, trendMonths, cancellationToken);
+        var trendWithRecurring = useAllTime ? monthlyTrend : MergeTrendWithRecurring(monthlyTrend, recurringByMonth);
         var trendFiltered = trendWithRecurring.Where(x => x.Income > 0 || x.Expenses > 0).ToList();
 
         var categoryDtos = BuildExpensesByCategory(mergedCategories, monthlyExpenses);
@@ -62,8 +124,8 @@ public class DashboardService : IDashboardService
         {
             TotalBalance = totalBalance,
             Currency = "EUR",
-            Year = targetYear,
-            Month = targetMonth,
+            Year = useAllTime ? 0 : targetYear,
+            Month = useAllTime || useFullYear ? 0 : month!.Value,
             MonthlyIncome = monthlyIncome,
             MonthlyExpenses = monthlyExpenses,
             ExpensesByCategory = categoryDtos,
@@ -110,8 +172,8 @@ public class DashboardService : IDashboardService
         {
             TotalBalance = 0,
             Currency = "EUR",
-            Year = year ?? now.Year,
-            Month = month ?? now.Month,
+            Year = year == 0 ? 0 : (year ?? now.Year),
+            Month = month == 0 ? 0 : (month ?? now.Month),
             MonthlyIncome = 0,
             MonthlyExpenses = 0,
             ExpensesByCategory = Array.Empty<ExpenseByCategoryDto>(),
@@ -151,13 +213,17 @@ public class DashboardService : IDashboardService
     private static IReadOnlyList<MonthlyTrendDto> BuildMonthlyTrend(IReadOnlyList<(int Year, int Month, decimal Income, decimal Expenses)> data)
     {
         var monthNames = new[] { "", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez" };
-        return data.Select(x => new MonthlyTrendDto
+        return data.Select(x =>
         {
-            Year = x.Year,
-            Month = x.Month,
-            Label = $"{monthNames[x.Month]} {x.Year}",
-            Income = x.Income,
-            Expenses = x.Expenses
+            var m = Math.Clamp(x.Month, 1, 12);
+            return new MonthlyTrendDto
+            {
+                Year = x.Year,
+                Month = x.Month,
+                Label = $"{monthNames[m]} {x.Year}",
+                Income = x.Income,
+                Expenses = x.Expenses
+            };
         }).ToList();
     }
 
