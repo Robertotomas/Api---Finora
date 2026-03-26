@@ -163,6 +163,16 @@ public class DashboardRepository : IDashboardRepository
         return await GetAccountBalancesAtDateAsync(householdId, new DateTime(year + 1, 1, 1, 0, 0, 0, DateTimeKind.Utc), cancellationToken);
     }
 
+    public async Task<DateTime?> GetEarliestTransactionDateAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        if (!await _context.Transactions.AsNoTracking().AnyAsync(t => t.HouseholdId == householdId, cancellationToken))
+            return null;
+        return await _context.Transactions
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId)
+            .MinAsync(t => t.Date, cancellationToken);
+    }
+
     public async Task<decimal> GetTotalIncomeAsync(Guid householdId, CancellationToken cancellationToken = default)
     {
         return await _context.Transactions
@@ -176,6 +186,26 @@ public class DashboardRepository : IDashboardRepository
         return await _context.Transactions
             .AsNoTracking()
             .Where(t => t.HouseholdId == householdId && t.Type == TransactionType.Expense)
+            .SumAsync(t => t.Amount, cancellationToken);
+    }
+
+    public async Task<decimal> GetTotalIncomeThroughLastClosedMonthAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        var now = DateTime.UtcNow;
+        var startOfCurrentMonth = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        return await _context.Transactions
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId && t.Type == TransactionType.Income && t.Date < startOfCurrentMonth)
+            .SumAsync(t => t.Amount, cancellationToken);
+    }
+
+    public async Task<decimal> GetTotalExpensesThroughLastClosedMonthAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        var now = DateTime.UtcNow;
+        var startOfCurrentMonth = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        return await _context.Transactions
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId && t.Type == TransactionType.Expense && t.Date < startOfCurrentMonth)
             .SumAsync(t => t.Amount, cancellationToken);
     }
 

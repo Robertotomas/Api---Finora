@@ -107,6 +107,83 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
             .ToList();
     }
 
+    public async Task<(int Year, int Month)?> GetMinimumStartMonthAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        var first = await _context.RecurringTransactions
+            .AsNoTracking()
+            .Where(r => r.HouseholdId == householdId)
+            .OrderBy(r => r.StartYear)
+            .ThenBy(r => r.StartMonth)
+            .Select(r => new { r.StartYear, r.StartMonth })
+            .FirstOrDefaultAsync(cancellationToken);
+        return first == null ? null : (first.StartYear, first.StartMonth);
+    }
+
+    public async Task<(decimal TotalIncome, decimal TotalExpenses, IReadOnlyList<(int Category, decimal Amount)> IncomeByCategory, IReadOnlyList<(int Category, decimal Amount)> ExpensesByCategory)> GetAggregatedForMonthRangeAsync(
+        Guid householdId, int startYear, int startMonth, int endYear, int endMonth, CancellationToken cancellationToken = default)
+    {
+        var recurring = await _context.RecurringTransactions
+            .AsNoTracking()
+            .Where(r => r.HouseholdId == householdId)
+            .ToListAsync(cancellationToken);
+
+        if (recurring.Count == 0)
+            return (0m, 0m, Array.Empty<(int, decimal)>(), Array.Empty<(int, decimal)>());
+
+        var startYm = startYear * 12 + startMonth;
+        var endYm = endYear * 12 + endMonth;
+        if (startYm > endYm)
+            return (0m, 0m, Array.Empty<(int, decimal)>(), Array.Empty<(int, decimal)>());
+
+        var incomeDict = new Dictionary<int, decimal>();
+        var expenseDict = new Dictionary<int, decimal>();
+        var totalIncome = 0m;
+        var totalExpenses = 0m;
+
+        var y = startYear;
+        var m = startMonth;
+        while (true)
+        {
+            var cur = y * 12 + m;
+            if (cur > endYm)
+                break;
+
+            foreach (var r in recurring)
+            {
+                var active = (r.StartYear < y || (r.StartYear == y && r.StartMonth <= m))
+                    && (r.EndYear == null || r.EndYear > y || (r.EndYear == y && r.EndMonth > m));
+                if (!active)
+                    continue;
+
+                if (r.Type == TransactionType.Income)
+                {
+                    totalIncome += r.Amount;
+                    var c = (int)r.Category;
+                    incomeDict[c] = incomeDict.GetValueOrDefault(c) + r.Amount;
+                }
+                else
+                {
+                    totalExpenses += r.Amount;
+                    var c = (int)r.Category;
+                    expenseDict[c] = expenseDict.GetValueOrDefault(c) + r.Amount;
+                }
+            }
+
+            m++;
+            if (m > 12)
+            {
+                m = 1;
+                y++;
+            }
+        }
+
+        return (
+            totalIncome,
+            totalExpenses,
+            incomeDict.OrderByDescending(x => x.Value).Select(x => (x.Key, x.Value)).ToList(),
+            expenseDict.OrderByDescending(x => x.Value).Select(x => (x.Key, x.Value)).ToList());
+    }
+
     public async Task<RecurringTransaction> CreateAsync(RecurringTransaction entity, CancellationToken cancellationToken = default)
     {
         _context.RecurringTransactions.Add(entity);

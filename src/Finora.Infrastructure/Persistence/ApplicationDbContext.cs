@@ -17,6 +17,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Transaction> Transactions => Set<Transaction>();
     public DbSet<TransactionSplit> TransactionSplits => Set<TransactionSplit>();
     public DbSet<RecurringTransaction> RecurringTransactions => Set<RecurringTransaction>();
+    public DbSet<SavingsObjective> SavingsObjectives => Set<SavingsObjective>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -110,6 +111,20 @@ public class ApplicationDbContext : DbContext
 
             entity.HasOne(e => e.Household)
                 .WithMany()
+                .HasForeignKey(e => e.HouseholdId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SavingsObjective>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).HasMaxLength(200);
+            entity.Property(e => e.TargetAmount).HasPrecision(18, 2);
+            entity.HasIndex(e => new { e.HouseholdId, e.CompletedAt });
+            entity.HasIndex(e => new { e.HouseholdId, e.SortOrder });
+
+            entity.HasOne(e => e.Household)
+                .WithMany(h => h.SavingsObjectives)
                 .HasForeignKey(e => e.HouseholdId)
                 .OnDelete(DeleteBehavior.Cascade);
         });

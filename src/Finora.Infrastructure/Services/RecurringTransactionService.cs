@@ -75,6 +75,23 @@ public class RecurringTransactionService : IRecurringTransactionService
         return await _repository.GetAmountsByMonthAsync(householdId, startYear, startMonth, count, cancellationToken);
     }
 
+    public async Task<(int Year, int Month)?> GetMinimumRecurringStartMonthAsync(Guid householdId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        if (!await UserBelongsToHouseholdAsync(userId, householdId, cancellationToken))
+            return null;
+
+        return await _repository.GetMinimumStartMonthAsync(householdId, cancellationToken);
+    }
+
+    public async Task<(decimal TotalIncome, decimal TotalExpenses, IReadOnlyList<(int Category, decimal Amount)> IncomeByCategory, IReadOnlyList<(int Category, decimal Amount)> ExpensesByCategory)> GetAggregatedForMonthRangeAsync(
+        Guid householdId, Guid userId, int startYear, int startMonth, int endYear, int endMonth, CancellationToken cancellationToken = default)
+    {
+        if (!await UserBelongsToHouseholdAsync(userId, householdId, cancellationToken))
+            return (0m, 0m, Array.Empty<(int, decimal)>(), Array.Empty<(int, decimal)>());
+
+        return await _repository.GetAggregatedForMonthRangeAsync(householdId, startYear, startMonth, endYear, endMonth, cancellationToken);
+    }
+
     public async Task<RecurringTransactionDto?> CreateAsync(CreateRecurringTransactionRequest request, Guid householdId, Guid userId, CancellationToken cancellationToken = default)
     {
         if (!await UserBelongsToHouseholdAsync(userId, householdId, cancellationToken))

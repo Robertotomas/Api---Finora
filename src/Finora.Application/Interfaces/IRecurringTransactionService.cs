@@ -10,6 +10,9 @@ public interface IRecurringTransactionService
     Task<IReadOnlyList<(int Category, decimal Amount)>> GetRecurringExpensesByCategoryAsync(Guid householdId, Guid userId, int year, int month, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<(int Category, decimal Amount)>> GetRecurringIncomeByCategoryAsync(Guid householdId, Guid userId, int year, int month, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<(int Year, int Month, decimal Income, decimal Expenses)>> GetAmountsByMonthAsync(Guid householdId, Guid userId, int startYear, int startMonth, int count, CancellationToken cancellationToken = default);
+    Task<(int Year, int Month)?> GetMinimumRecurringStartMonthAsync(Guid householdId, Guid userId, CancellationToken cancellationToken = default);
+    Task<(decimal TotalIncome, decimal TotalExpenses, IReadOnlyList<(int Category, decimal Amount)> IncomeByCategory, IReadOnlyList<(int Category, decimal Amount)> ExpensesByCategory)> GetAggregatedForMonthRangeAsync(
+        Guid householdId, Guid userId, int startYear, int startMonth, int endYear, int endMonth, CancellationToken cancellationToken = default);
     Task<RecurringTransactionDto?> CreateAsync(CreateRecurringTransactionRequest request, Guid householdId, Guid userId, CancellationToken cancellationToken = default);
     Task<RecurringTransactionDto?> UpdateAsync(Guid id, UpdateRecurringTransactionRequest request, Guid userId, CancellationToken cancellationToken = default);
     /// <summary>Stops the recurring from this month onward (sets EndMonth/EndYear).</summary>

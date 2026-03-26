@@ -52,7 +52,7 @@ public class DashboardController : ControllerBase
     /// Get dashboard data: total balance, monthly income/expenses, expenses by category, and monthly trend for charts.
     /// </summary>
     /// <param name="year">Optional year (default: current).</param>
-    /// <param name="month">Optional month for income/expenses/categories (default: current).</param>
+    /// <param name="month">Optional month: 1–12 = that month, 0 = full calendar year, -1 = year-to-date (Jan through current month for this year, or full past years).</param>
     /// <param name="trendMonths">Number of months for trend chart (default: 6).</param>
     [HttpGet]
     [ProducesResponseType(typeof(DashboardDto), StatusCodes.Status200OK)]
