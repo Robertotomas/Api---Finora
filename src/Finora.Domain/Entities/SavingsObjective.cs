@@ -9,6 +9,7 @@ public class SavingsObjective : BaseEntity
 
     public string Name { get; set; } = string.Empty;
     public decimal TargetAmount { get; set; }
+    public DateOnly? TargetDate { get; set; }
     public int SortOrder { get; set; }
     public DateTime? CompletedAt { get; set; }
 }

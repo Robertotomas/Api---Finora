@@ -47,6 +47,7 @@ public class SavingsObjectiveService : ISavingsObjectiveService
             HouseholdId = householdId,
             Name = request.Name.Trim(),
             TargetAmount = request.TargetAmount,
+            TargetDate = request.TargetDate,
             SortOrder = maxSortOrder + 1,
             CreatedAt = DateTime.UtcNow
         };
@@ -72,6 +73,7 @@ public class SavingsObjectiveService : ISavingsObjectiveService
 
         objective.Name = request.Name.Trim();
         objective.TargetAmount = request.TargetAmount;
+        objective.TargetDate = request.TargetDate;
         objective.UpdatedAt = DateTime.UtcNow;
 
         await _objectivesRepository.UpdateAsync(objective, cancellationToken);
@@ -150,6 +152,7 @@ public class SavingsObjectiveService : ISavingsObjectiveService
                 Id = item.Id,
                 Name = item.Name,
                 TargetAmount = item.TargetAmount,
+                TargetDate = item.TargetDate,
                 SortOrder = item.SortOrder,
                 AllocatedAmount = allocated,
                 ProgressPercent = progressPercent,
@@ -162,6 +165,7 @@ public class SavingsObjectiveService : ISavingsObjectiveService
             Id = x.Id,
             Name = x.Name,
             TargetAmount = x.TargetAmount,
+            TargetDate = x.TargetDate,
             SortOrder = x.SortOrder,
             CompletedAt = x.CompletedAt!.Value
         }).ToList();

@@ -10,4 +10,6 @@ public record UpdateSavingsObjectiveRequest
 
     [Range(typeof(decimal), "0.01", "999999999999.99", ParseLimitsInInvariantCulture = true, ConvertValueInInvariantCulture = true)]
     public decimal TargetAmount { get; init; }
+
+    public DateOnly? TargetDate { get; init; }
 }

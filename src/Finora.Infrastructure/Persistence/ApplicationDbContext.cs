@@ -120,6 +120,7 @@ public class ApplicationDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Name).HasMaxLength(200);
             entity.Property(e => e.TargetAmount).HasPrecision(18, 2);
+            entity.Property(e => e.TargetDate);
             entity.HasIndex(e => new { e.HouseholdId, e.CompletedAt });
             entity.HasIndex(e => new { e.HouseholdId, e.SortOrder });
 

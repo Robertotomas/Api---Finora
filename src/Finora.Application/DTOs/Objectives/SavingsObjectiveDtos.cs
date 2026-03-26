@@ -5,6 +5,7 @@ public record SavingsObjectiveActiveDto
     public Guid Id { get; init; }
     public string Name { get; init; } = string.Empty;
     public decimal TargetAmount { get; init; }
+    public DateOnly? TargetDate { get; init; }
     public int SortOrder { get; init; }
     public decimal AllocatedAmount { get; init; }
     public decimal ProgressPercent { get; init; }
@@ -16,6 +17,7 @@ public record SavingsObjectiveHistoryDto
     public Guid Id { get; init; }
     public string Name { get; init; } = string.Empty;
     public decimal TargetAmount { get; init; }
+    public DateOnly? TargetDate { get; init; }
     public int SortOrder { get; init; }
     public DateTime CompletedAt { get; init; }
 }
