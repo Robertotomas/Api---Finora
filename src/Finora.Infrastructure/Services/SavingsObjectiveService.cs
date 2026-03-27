@@ -9,15 +9,18 @@ public class SavingsObjectiveService : ISavingsObjectiveService
     private readonly ISavingsObjectiveRepository _objectivesRepository;
     private readonly IDashboardRepository _dashboardRepository;
     private readonly IUserRepository _userRepository;
+    private readonly ISubscriptionService _subscriptionService;
 
     public SavingsObjectiveService(
         ISavingsObjectiveRepository objectivesRepository,
         IDashboardRepository dashboardRepository,
-        IUserRepository userRepository)
+        IUserRepository userRepository,
+        ISubscriptionService subscriptionService)
     {
         _objectivesRepository = objectivesRepository;
         _dashboardRepository = dashboardRepository;
         _userRepository = userRepository;
+        _subscriptionService = subscriptionService;
     }
 
     public async Task<SavingsObjectivesOverviewDto> GetOverviewAsync(Guid householdId, Guid userId, CancellationToken cancellationToken = default)
@@ -38,6 +41,9 @@ public class SavingsObjectiveService : ISavingsObjectiveService
         CancellationToken cancellationToken = default)
     {
         if (!await UserBelongsToHouseholdAsync(userId, householdId, cancellationToken))
+            return null;
+
+        if (!await _subscriptionService.CanAccessObjectivesAsync(householdId, cancellationToken))
             return null;
 
         var maxSortOrder = await _objectivesRepository.GetMaxSortOrderAsync(householdId, cancellationToken);
@@ -68,6 +74,8 @@ public class SavingsObjectiveService : ISavingsObjectiveService
             return null;
         if (!await UserBelongsToHouseholdAsync(userId, objective.HouseholdId, cancellationToken))
             return null;
+        if (!await _subscriptionService.CanAccessObjectivesAsync(objective.HouseholdId, cancellationToken))
+            return null;
         if (objective.CompletedAt.HasValue)
             return null;
 
@@ -90,6 +98,8 @@ public class SavingsObjectiveService : ISavingsObjectiveService
         if (objective == null)
             return null;
         if (!await UserBelongsToHouseholdAsync(userId, objective.HouseholdId, cancellationToken))
+            return null;
+        if (!await _subscriptionService.CanAccessObjectivesAsync(objective.HouseholdId, cancellationToken))
             return null;
         if (objective.CompletedAt.HasValue)
             return null;
