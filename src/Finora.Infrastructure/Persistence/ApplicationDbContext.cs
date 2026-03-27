@@ -29,6 +29,12 @@ public class ApplicationDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Name).HasMaxLength(200);
             entity.Property(e => e.Type).HasConversion<int>();
+
+            entity.HasOne(e => e.PrimaryAccount)
+                .WithMany()
+                .HasForeignKey(e => e.PrimaryAccountId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .IsRequired(false);
         });
 
         modelBuilder.Entity<User>(entity =>

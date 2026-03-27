@@ -8,4 +8,5 @@ public interface IHouseholdService
     Task<IReadOnlyList<HouseholdMemberDto>> GetMembersAsync(Guid householdId, Guid userId, CancellationToken cancellationToken = default);
     Task<HouseholdDto?> GetOrCreateForUserAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<HouseholdDto?> UpdateAsync(Guid id, UpdateHouseholdRequest request, Guid userId, CancellationToken cancellationToken = default);
+    Task<HouseholdDto?> SetPrimaryAccountAsync(Guid userId, SetPrimaryAccountRequest request, CancellationToken cancellationToken = default);
 }

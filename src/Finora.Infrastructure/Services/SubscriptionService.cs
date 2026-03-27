@@ -58,6 +58,10 @@ public class SubscriptionService : ISubscriptionService
         var plan = await GetActivePlanAsync(householdId, cancellationToken);
         if (plan != SubscriptionPlan.Free) return true;
 
+        var (_, needsPrimary, _) = await GetFreeMultiAccountStateAsync(householdId, cancellationToken);
+        if (needsPrimary)
+            return false;
+
         var from = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
         var to = from.AddMonths(1).AddTicks(-1);
 
@@ -93,6 +97,42 @@ public class SubscriptionService : ISubscriptionService
             ExpiresAt = null,
             CreatedAt = now
         }, cancellationToken);
+    }
+
+    public async Task<(bool FreeMultiAccount, bool NeedsPrimarySelection, Guid? PrimaryAccountId)> GetFreeMultiAccountStateAsync(
+        Guid householdId,
+        CancellationToken cancellationToken = default)
+    {
+        var plan = await GetActivePlanAsync(householdId, cancellationToken);
+        if (plan != SubscriptionPlan.Free)
+            return (false, false, null);
+
+        var accounts = await _accountRepository.GetByHouseholdIdAsync(householdId, cancellationToken);
+        if (accounts.Count <= 1)
+            return (false, false, accounts.Count == 1 ? accounts[0].Id : null);
+
+        var household = await _householdRepository.GetByIdAsync(householdId, cancellationToken);
+        if (household == null)
+            return (true, true, null);
+
+        var pid = household.PrimaryAccountId;
+        if (!pid.HasValue)
+            return (true, true, null);
+
+        if (accounts.All(a => a.Id != pid.Value))
+            return (true, true, null);
+
+        return (true, false, pid);
+    }
+
+    public async Task<bool> CanUseAccountForActivityAsync(Guid householdId, Guid accountId, CancellationToken cancellationToken = default)
+    {
+        var (freeMulti, needsPrimary, primaryId) = await GetFreeMultiAccountStateAsync(householdId, cancellationToken);
+        if (!freeMulti)
+            return true;
+        if (needsPrimary)
+            return false;
+        return accountId == primaryId!.Value;
     }
 }
 

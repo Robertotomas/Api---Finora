@@ -121,6 +121,13 @@ public class AccountsController : ControllerBase
         if (UserId == null)
             return NotFound();
 
+        var householdId = await ResolveHouseholdIdAsync(cancellationToken);
+        if (householdId == null)
+            return NotFound();
+
+        if (!await _subscriptionService.CanUseAccountForActivityAsync(householdId.Value, id, cancellationToken))
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_ACCOUNT_LOCKED", message = "No plano Free só podes editar a conta principal. Escolhe outra conta como principal ou elimina contas extra." });
+
         var account = await _accountService.UpdateAsync(id, request, UserId.Value, cancellationToken);
         return account == null ? NotFound() : Ok(account);
     }

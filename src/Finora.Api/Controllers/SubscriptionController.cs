@@ -62,6 +62,8 @@ public class SubscriptionController : ControllerBase
         public int? ExpensesRemainingThisMonth { get; init; }
         public bool ObjectivesEnabled { get; init; }
         public bool CanInvite { get; init; }
+        public bool NeedsPrimaryAccountSelection { get; init; }
+        public Guid? PrimaryAccountId { get; init; }
     }
 
     public record SubscriptionMeDto
@@ -81,6 +83,8 @@ public class SubscriptionController : ControllerBase
 
         var plan = await _subscriptionService.GetActivePlanAsync(householdId.Value, cancellationToken);
         var effectivePlan = plan ?? SubscriptionPlan.Free;
+        var (freeMulti, needsPrimary, primaryAccountId) =
+            await _subscriptionService.GetFreeMultiAccountStateAsync(householdId.Value, cancellationToken);
 
         var now = DateTime.UtcNow;
         var from = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -117,7 +121,9 @@ public class SubscriptionController : ControllerBase
                 IncomeRemainingThisMonth = incomeRemaining,
                 ExpensesRemainingThisMonth = expensesRemaining,
                 ObjectivesEnabled = objectivesEnabled,
-                CanInvite = canInvite
+                CanInvite = canInvite,
+                NeedsPrimaryAccountSelection = freeMulti && needsPrimary,
+                PrimaryAccountId = freeMulti && !needsPrimary ? primaryAccountId : null
             }
         });
     }

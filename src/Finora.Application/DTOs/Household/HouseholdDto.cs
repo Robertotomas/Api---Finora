@@ -8,4 +8,5 @@ public record HouseholdDto
     public HouseholdType Type { get; init; }
     public string Name { get; init; } = string.Empty;
     public string CurrentPlan { get; init; } = string.Empty;
+    public Guid? PrimaryAccountId { get; init; }
 }

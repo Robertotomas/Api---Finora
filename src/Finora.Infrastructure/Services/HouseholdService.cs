@@ -9,15 +9,18 @@ public class HouseholdService : IHouseholdService
     private readonly IHouseholdRepository _householdRepository;
     private readonly IUserRepository _userRepository;
     private readonly ISubscriptionService _subscriptionService;
+    private readonly IAccountRepository _accountRepository;
 
     public HouseholdService(
         IHouseholdRepository householdRepository,
         IUserRepository userRepository,
-        ISubscriptionService subscriptionService)
+        ISubscriptionService subscriptionService,
+        IAccountRepository accountRepository)
     {
         _householdRepository = householdRepository;
         _userRepository = userRepository;
         _subscriptionService = subscriptionService;
+        _accountRepository = accountRepository;
     }
 
     public async Task<HouseholdDto?> GetByIdAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
@@ -92,6 +95,26 @@ public class HouseholdService : IHouseholdService
         return await ToDtoAsync(household, cancellationToken);
     }
 
+    public async Task<HouseholdDto?> SetPrimaryAccountAsync(Guid userId, SetPrimaryAccountRequest request, CancellationToken cancellationToken = default)
+    {
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user?.HouseholdId is not { } householdId)
+            return null;
+
+        var accounts = await _accountRepository.GetByHouseholdIdAsync(householdId, cancellationToken);
+        if (accounts.All(a => a.Id != request.AccountId))
+            return null;
+
+        var household = await _householdRepository.GetByIdTrackedAsync(householdId, cancellationToken);
+        if (household == null)
+            return null;
+
+        household.PrimaryAccountId = request.AccountId;
+        household.UpdatedAt = DateTime.UtcNow;
+        await _householdRepository.SaveChangesAsync(cancellationToken);
+        return await ToDtoAsync(household, cancellationToken);
+    }
+
     private async Task<HouseholdDto> ToDtoAsync(Domain.Entities.Household household, CancellationToken cancellationToken)
     {
         var plan = await _subscriptionService.GetActivePlanAsync(household.Id, cancellationToken);
@@ -100,7 +123,8 @@ public class HouseholdService : IHouseholdService
             Id = household.Id,
             Type = household.Type,
             Name = household.Name,
-            CurrentPlan = (plan ?? SubscriptionPlan.Free).ToString()
+            CurrentPlan = (plan ?? SubscriptionPlan.Free).ToString(),
+            PrimaryAccountId = household.PrimaryAccountId
         };
     }
 }

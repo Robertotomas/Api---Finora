@@ -96,6 +96,13 @@ public class RecurringTransactionsController : ControllerBase
         if (householdId == null)
             return NotFound();
 
+        var (_, needsPrimary, _) = await _subscriptionService.GetFreeMultiAccountStateAsync(householdId.Value, cancellationToken);
+        if (needsPrimary)
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_PRIMARY_REQUIRED", message = "Tens mais do que uma conta no plano Free. Escolhe a conta principal em Contas antes de adicionar recorrentes." });
+
+        if (!await _subscriptionService.CanUseAccountForActivityAsync(householdId.Value, request.AccountId, cancellationToken))
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_ACCOUNT_LOCKED", message = "No plano Free só podes usar recorrentes na conta principal." });
+
         var now = DateTime.UtcNow;
         if (!await _subscriptionService.CanAddTransactionAsync(
                 householdId.Value,
@@ -122,6 +129,18 @@ public class RecurringTransactionsController : ControllerBase
     {
         if (UserId == null)
             return NotFound();
+
+        var existing = await _recurringService.GetByIdAsync(id, UserId.Value, cancellationToken);
+        if (existing == null)
+            return NotFound();
+
+        var (_, needsPrimary, _) = await _subscriptionService.GetFreeMultiAccountStateAsync(existing.HouseholdId, cancellationToken);
+        if (needsPrimary)
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_PRIMARY_REQUIRED", message = "Tens mais do que uma conta no plano Free. Escolhe a conta principal em Contas." });
+
+        if (!await _subscriptionService.CanUseAccountForActivityAsync(existing.HouseholdId, existing.AccountId, cancellationToken)
+            || !await _subscriptionService.CanUseAccountForActivityAsync(existing.HouseholdId, request.AccountId, cancellationToken))
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_ACCOUNT_LOCKED", message = "No plano Free só podes editar recorrentes na conta principal." });
 
         var updated = await _recurringService.UpdateAsync(id, request, UserId!.Value, cancellationToken);
         return updated == null ? NotFound() : Ok(updated);

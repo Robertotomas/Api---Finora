@@ -87,4 +87,19 @@ public class HouseholdController : ControllerBase
         var household = await _householdService.UpdateAsync(id, request, UserId.Value, cancellationToken);
         return household == null ? NotFound() : Ok(household);
     }
+
+    /// <summary>Choose which account stays active on Free when the household has more than one account.</summary>
+    [HttpPut("me/primary-account")]
+    [ProducesResponseType(typeof(HouseholdDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<HouseholdDto>> SetPrimaryAccount(
+        [FromBody] SetPrimaryAccountRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (UserId == null)
+            return NotFound();
+
+        var household = await _householdService.SetPrimaryAccountAsync(UserId.Value, request, cancellationToken);
+        return household == null ? NotFound() : Ok(household);
+    }
 }
