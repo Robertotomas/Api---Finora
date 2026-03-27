@@ -16,17 +16,20 @@ public class SubscriptionController : ControllerBase
     private readonly IHouseholdService _householdService;
     private readonly IAccountRepository _accountRepository;
     private readonly ITransactionRepository _transactionRepository;
+    private readonly IRecurringTransactionRepository _recurringTransactionRepository;
 
     public SubscriptionController(
         ISubscriptionService subscriptionService,
         IHouseholdService householdService,
         IAccountRepository accountRepository,
-        ITransactionRepository transactionRepository)
+        ITransactionRepository transactionRepository,
+        IRecurringTransactionRepository recurringTransactionRepository)
     {
         _subscriptionService = subscriptionService;
         _householdService = householdService;
         _accountRepository = accountRepository;
         _transactionRepository = transactionRepository;
+        _recurringTransactionRepository = recurringTransactionRepository;
     }
 
     private Guid? UserId
@@ -93,9 +96,12 @@ public class SubscriptionController : ControllerBase
         {
             var accounts = await _accountRepository.GetByHouseholdIdAsync(householdId.Value, cancellationToken);
             var transactions = await _transactionRepository.GetByHouseholdAsync(householdId.Value, null, from, to, cancellationToken);
+            var recurring = await _recurringTransactionRepository.GetActiveForMonthAsync(householdId.Value, now.Year, now.Month, cancellationToken);
 
-            var incomeCount = transactions.Count(t => t.Type == TransactionType.Income);
-            var expenseCount = transactions.Count(t => t.Type == TransactionType.Expense);
+            var incomeCount = transactions.Count(t => t.Type == TransactionType.Income)
+                + recurring.Count(t => t.Type == TransactionType.Income);
+            var expenseCount = transactions.Count(t => t.Type == TransactionType.Expense)
+                + recurring.Count(t => t.Type == TransactionType.Expense);
 
             accountsRemaining = Math.Max(0, 1 - accounts.Count);
             incomeRemaining = Math.Max(0, 1 - incomeCount);

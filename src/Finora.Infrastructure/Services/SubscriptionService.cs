@@ -10,17 +10,20 @@ public class SubscriptionService : ISubscriptionService
     private readonly IHouseholdRepository _householdRepository;
     private readonly IAccountRepository _accountRepository;
     private readonly ITransactionRepository _transactionRepository;
+    private readonly IRecurringTransactionRepository _recurringTransactionRepository;
 
     public SubscriptionService(
         ISubscriptionRepository subscriptionRepository,
         IHouseholdRepository householdRepository,
         IAccountRepository accountRepository,
-        ITransactionRepository transactionRepository)
+        ITransactionRepository transactionRepository,
+        IRecurringTransactionRepository recurringTransactionRepository)
     {
         _subscriptionRepository = subscriptionRepository;
         _householdRepository = householdRepository;
         _accountRepository = accountRepository;
         _transactionRepository = transactionRepository;
+        _recurringTransactionRepository = recurringTransactionRepository;
     }
 
     public async Task<SubscriptionPlan?> GetActivePlanAsync(Guid householdId, CancellationToken cancellationToken = default)
@@ -59,7 +62,8 @@ public class SubscriptionService : ISubscriptionService
         var to = from.AddMonths(1).AddTicks(-1);
 
         var transactions = await _transactionRepository.GetByHouseholdAsync(householdId, null, from, to, cancellationToken);
-        var count = transactions.Count(t => t.Type == type);
+        var recurring = await _recurringTransactionRepository.GetActiveForMonthAsync(householdId, year, month, cancellationToken);
+        var count = transactions.Count(t => t.Type == type) + recurring.Count(t => t.Type == type);
 
         return type switch
         {

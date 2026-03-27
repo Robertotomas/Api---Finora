@@ -51,6 +51,18 @@ public class TransactionRepository : ITransactionRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyDictionary<Guid, DateTime>> GetMinTransactionDateByAccountAsync(
+        Guid householdId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.Transactions
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId)
+            .GroupBy(t => t.AccountId)
+            .Select(g => new { AccountId = g.Key, MinDate = g.Min(t => t.Date) })
+            .ToDictionaryAsync(x => x.AccountId, x => x.MinDate, cancellationToken);
+    }
+
     public async Task<Transaction> CreateAsync(Transaction transaction, CancellationToken cancellationToken = default)
     {
         _context.Transactions.Add(transaction);

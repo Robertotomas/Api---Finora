@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Finora.Application.DTOs.RecurringTransaction;
 using Finora.Application.Interfaces;
+using Finora.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -13,11 +14,16 @@ public class RecurringTransactionsController : ControllerBase
 {
     private readonly IRecurringTransactionService _recurringService;
     private readonly IHouseholdService _householdService;
+    private readonly ISubscriptionService _subscriptionService;
 
-    public RecurringTransactionsController(IRecurringTransactionService recurringService, IHouseholdService householdService)
+    public RecurringTransactionsController(
+        IRecurringTransactionService recurringService,
+        IHouseholdService householdService,
+        ISubscriptionService subscriptionService)
     {
         _recurringService = recurringService;
         _householdService = householdService;
+        _subscriptionService = subscriptionService;
     }
 
     private Guid? UserId
@@ -89,6 +95,20 @@ public class RecurringTransactionsController : ControllerBase
         var householdId = await ResolveHouseholdIdAsync(cancellationToken);
         if (householdId == null)
             return NotFound();
+
+        var now = DateTime.UtcNow;
+        if (!await _subscriptionService.CanAddTransactionAsync(
+                householdId.Value,
+                request.Type,
+                now.Year,
+                now.Month,
+                cancellationToken))
+        {
+            var message = request.Type == TransactionType.Income
+                ? "No plano Free só podes adicionar 1 receita por mês."
+                : "No plano Free só podes adicionar 5 despesas por mês.";
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message });
+        }
 
         var created = await _recurringService.CreateAsync(request, householdId.Value, UserId!.Value, cancellationToken);
         return created == null ? NotFound() : CreatedAtAction(nameof(GetById), new { id = created.Id }, created);

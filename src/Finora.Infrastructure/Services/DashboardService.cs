@@ -9,15 +9,18 @@ public class DashboardService : IDashboardService
     private readonly IDashboardRepository _dashboardRepository;
     private readonly IRecurringTransactionService _recurringService;
     private readonly IUserRepository _userRepository;
+    private readonly IRecurringAccountBalanceService _recurringAccountBalanceService;
 
     public DashboardService(
         IDashboardRepository dashboardRepository,
         IRecurringTransactionService recurringService,
-        IUserRepository userRepository)
+        IUserRepository userRepository,
+        IRecurringAccountBalanceService recurringAccountBalanceService)
     {
         _dashboardRepository = dashboardRepository;
         _recurringService = recurringService;
         _userRepository = userRepository;
+        _recurringAccountBalanceService = recurringAccountBalanceService;
     }
 
     public async Task<DashboardDto> GetDashboardAsync(Guid householdId, Guid userId, int? year, int? month, int trendMonths = 6, CancellationToken cancellationToken = default)
@@ -175,6 +178,41 @@ public class DashboardService : IDashboardService
             mergedIncomeCategories = MergeExpensesByCategory(incomeByCategory, recurringIncomeByCategory);
         }
 
+        int capYear;
+        int capMonth;
+        if (useAllTime)
+        {
+            capYear = now.Year;
+            capMonth = now.Month;
+        }
+        else if (useYearToDate)
+        {
+            var lastMonthInYear = targetYear > now.Year ? 0 : targetYear < now.Year ? 12 : now.Month;
+            if (lastMonthInYear == 0)
+            {
+                capYear = targetYear;
+                capMonth = 1;
+            }
+            else
+            {
+                capYear = targetYear;
+                capMonth = lastMonthInYear;
+            }
+        }
+        else if (useFullYear)
+        {
+            capYear = targetYear;
+            capMonth = 12;
+        }
+        else
+        {
+            capYear = targetYear;
+            capMonth = month!.Value;
+        }
+
+        accountBalancesAtPeriod = await MergeRecurringIntoAccountBalancesAsync(
+            householdId, accountBalancesAtPeriod, capYear, capMonth, cancellationToken);
+
         var totalBalance = accountBalancesAtPeriod.Sum(a => a.Balance);
 
         var effectiveTrendMonths = useAllTime ? Math.Max(trendMonths, 60) : trendMonths;
@@ -330,4 +368,16 @@ public class DashboardService : IDashboardService
         TransactionCategory.Education => "Educação",
         _ => "Outro"
     };
+
+    private async Task<IReadOnlyList<AccountBalanceAtDate>> MergeRecurringIntoAccountBalancesAsync(
+        Guid householdId,
+        IReadOnlyList<AccountBalanceAtDate> balances,
+        int periodThroughYear,
+        int periodThroughMonth,
+        CancellationToken cancellationToken)
+    {
+        var adj = await _recurringAccountBalanceService.GetCumulativeRecurringNetThroughMonthAsync(
+            householdId, periodThroughYear, periodThroughMonth, cancellationToken);
+        return balances.Select(b => b with { Balance = b.Balance + adj.GetValueOrDefault(b.AccountId) }).ToList();
+    }
 }

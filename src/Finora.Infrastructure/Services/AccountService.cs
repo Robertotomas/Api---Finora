@@ -9,11 +9,16 @@ public class AccountService : IAccountService
 {
     private readonly IAccountRepository _accountRepository;
     private readonly IUserRepository _userRepository;
+    private readonly IRecurringAccountBalanceService _recurringAccountBalanceService;
 
-    public AccountService(IAccountRepository accountRepository, IUserRepository userRepository)
+    public AccountService(
+        IAccountRepository accountRepository,
+        IUserRepository userRepository,
+        IRecurringAccountBalanceService recurringAccountBalanceService)
     {
         _accountRepository = accountRepository;
         _userRepository = userRepository;
+        _recurringAccountBalanceService = recurringAccountBalanceService;
     }
 
     public async Task<IReadOnlyList<AccountDto>> GetByHouseholdAsync(Guid householdId, Guid userId, CancellationToken cancellationToken = default)
@@ -22,7 +27,12 @@ public class AccountService : IAccountService
             return Array.Empty<AccountDto>();
 
         var accounts = await _accountRepository.GetByHouseholdIdAsync(householdId, cancellationToken);
-        return accounts.Select(ToDto).ToList();
+        var now = DateTime.UtcNow;
+        var recurringNet = await _recurringAccountBalanceService.GetCumulativeRecurringNetThroughMonthAsync(
+            householdId, now.Year, now.Month, cancellationToken);
+        return accounts
+            .Select(a => ToDto(a, recurringNet.GetValueOrDefault(a.Id)))
+            .ToList();
     }
 
     public async Task<AccountDto?> GetByIdAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
@@ -33,7 +43,10 @@ public class AccountService : IAccountService
         if (!await UserBelongsToHouseholdAsync(userId, account.HouseholdId, cancellationToken))
             return null;
 
-        return ToDto(account);
+        var now = DateTime.UtcNow;
+        var recurringNet = await _recurringAccountBalanceService.GetCumulativeRecurringNetThroughMonthAsync(
+            account.HouseholdId, now.Year, now.Month, cancellationToken);
+        return ToDto(account, recurringNet.GetValueOrDefault(account.Id));
     }
 
     public async Task<AccountDto?> CreateAsync(CreateAccountRequest request, Guid householdId, Guid userId, CancellationToken cancellationToken = default)
@@ -53,7 +66,10 @@ public class AccountService : IAccountService
         };
 
         await _accountRepository.CreateAsync(account, cancellationToken);
-        return ToDto(account);
+        var now = DateTime.UtcNow;
+        var recurringNet = await _recurringAccountBalanceService.GetCumulativeRecurringNetThroughMonthAsync(
+            householdId, now.Year, now.Month, cancellationToken);
+        return ToDto(account, recurringNet.GetValueOrDefault(account.Id));
     }
 
     public async Task<AccountDto?> UpdateAsync(Guid id, UpdateAccountRequest request, Guid userId, CancellationToken cancellationToken = default)
@@ -71,7 +87,10 @@ public class AccountService : IAccountService
         account.UpdatedAt = DateTime.UtcNow;
 
         await _accountRepository.UpdateAsync(account, cancellationToken);
-        return ToDto(account);
+        var now = DateTime.UtcNow;
+        var recurringNet = await _recurringAccountBalanceService.GetCumulativeRecurringNetThroughMonthAsync(
+            account.HouseholdId, now.Year, now.Month, cancellationToken);
+        return ToDto(account, recurringNet.GetValueOrDefault(account.Id));
     }
 
     public async Task<bool> DeleteAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
@@ -92,14 +111,14 @@ public class AccountService : IAccountService
         return user != null && user.HouseholdId.HasValue && user.HouseholdId.Value == householdId;
     }
 
-    private static AccountDto ToDto(Account account)
+    private static AccountDto ToDto(Account account, decimal recurringNetThroughCurrentMonth)
     {
         return new AccountDto
         {
             Id = account.Id,
             Name = account.Name,
             Type = account.Type,
-            Balance = account.Balance,
+            Balance = account.Balance + recurringNetThroughCurrentMonth,
             Currency = account.Currency,
             HouseholdId = account.HouseholdId
         };

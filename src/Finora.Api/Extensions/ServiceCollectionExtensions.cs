@@ -23,6 +23,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<ISavingsObjectiveService, SavingsObjectiveService>();
         services.AddScoped<ISubscriptionService, SubscriptionService>();
+        services.AddScoped<IRecurringAccountBalanceService, RecurringAccountBalanceService>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
         services.AddScoped<ISavingsObjectiveRepository, SavingsObjectiveRepository>();
