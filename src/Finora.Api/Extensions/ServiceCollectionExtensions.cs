@@ -22,11 +22,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRecurringTransactionService, RecurringTransactionService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<ISavingsObjectiveService, SavingsObjectiveService>();
+        services.AddScoped<ISubscriptionService, SubscriptionService>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
         services.AddScoped<ISavingsObjectiveRepository, SavingsObjectiveRepository>();
         services.AddScoped<IRecurringTransactionRepository, RecurringTransactionRepository>();
         services.AddScoped<IHouseholdRepository, HouseholdRepository>();
+        services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();
         services.AddScoped<IAccountRepository, AccountRepository>();
         services.AddScoped<ITransactionRepository, TransactionRepository>();
         return services;

@@ -15,12 +15,18 @@ public class AuthService : IAuthService
 {
     private readonly IUserRepository _userRepository;
     private readonly IHouseholdRepository _householdRepository;
+    private readonly ISubscriptionRepository _subscriptionRepository;
     private readonly JwtOptions _jwtOptions;
 
-    public AuthService(IUserRepository userRepository, IHouseholdRepository householdRepository, IOptions<JwtOptions> jwtOptions)
+    public AuthService(
+        IUserRepository userRepository,
+        IHouseholdRepository householdRepository,
+        ISubscriptionRepository subscriptionRepository,
+        IOptions<JwtOptions> jwtOptions)
     {
         _userRepository = userRepository;
         _householdRepository = householdRepository;
+        _subscriptionRepository = subscriptionRepository;
         _jwtOptions = jwtOptions.Value;
     }
 
@@ -37,6 +43,17 @@ public class AuthService : IAuthService
             CreatedAt = DateTime.UtcNow
         };
         await _householdRepository.CreateAsync(household, cancellationToken);
+
+        await _subscriptionRepository.CreateAsync(new Subscription
+        {
+            Id = Guid.NewGuid(),
+            HouseholdId = household.Id,
+            Plan = SubscriptionPlan.Free,
+            Status = SubscriptionStatus.Active,
+            StartedAt = DateTime.UtcNow,
+            ExpiresAt = null,
+            CreatedAt = DateTime.UtcNow
+        }, cancellationToken);
 
         var user = new User
         {

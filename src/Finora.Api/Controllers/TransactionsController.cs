@@ -13,11 +13,16 @@ public class TransactionsController : ControllerBase
 {
     private readonly ITransactionService _transactionService;
     private readonly IHouseholdService _householdService;
+    private readonly ISubscriptionService _subscriptionService;
 
-    public TransactionsController(ITransactionService transactionService, IHouseholdService householdService)
+    public TransactionsController(
+        ITransactionService transactionService,
+        IHouseholdService householdService,
+        ISubscriptionService subscriptionService)
     {
         _transactionService = transactionService;
         _householdService = householdService;
+        _subscriptionService = subscriptionService;
     }
 
     private Guid? UserId
@@ -110,6 +115,14 @@ public class TransactionsController : ControllerBase
         var householdId = await ResolveHouseholdIdAsync(cancellationToken);
         if (householdId == null)
             return NotFound();
+
+        if (!await _subscriptionService.CanAddTransactionAsync(
+                householdId.Value,
+                request.Type,
+                request.Date.Year,
+                request.Date.Month,
+                cancellationToken))
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free só podes adicionar 1 receita e 5 despesas por mês." });
 
         var transaction = await _transactionService.CreateAsync(request, householdId.Value, UserId.Value, cancellationToken);
         return transaction == null ? NotFound() : CreatedAtAction(nameof(GetById), new { id = transaction.Id }, transaction);

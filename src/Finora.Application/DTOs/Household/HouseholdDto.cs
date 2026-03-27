@@ -7,4 +7,5 @@ public record HouseholdDto
     public Guid Id { get; init; }
     public HouseholdType Type { get; init; }
     public string Name { get; init; } = string.Empty;
+    public string CurrentPlan { get; init; } = string.Empty;
 }

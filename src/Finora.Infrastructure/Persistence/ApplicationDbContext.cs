@@ -18,6 +18,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<TransactionSplit> TransactionSplits => Set<TransactionSplit>();
     public DbSet<RecurringTransaction> RecurringTransactions => Set<RecurringTransaction>();
     public DbSet<SavingsObjective> SavingsObjectives => Set<SavingsObjective>();
+    public DbSet<Subscription> Subscriptions => Set<Subscription>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -126,6 +127,19 @@ public class ApplicationDbContext : DbContext
 
             entity.HasOne(e => e.Household)
                 .WithMany(h => h.SavingsObjectives)
+                .HasForeignKey(e => e.HouseholdId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Subscription>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Plan).HasConversion<int>();
+            entity.Property(e => e.Status).HasConversion<int>();
+            entity.Property(e => e.ExpiresAt);
+
+            entity.HasOne(e => e.Household)
+                .WithMany(h => h.Subscriptions)
                 .HasForeignKey(e => e.HouseholdId)
                 .OnDelete(DeleteBehavior.Cascade);
         });

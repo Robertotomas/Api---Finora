@@ -13,11 +13,16 @@ public class AccountsController : ControllerBase
 {
     private readonly IAccountService _accountService;
     private readonly IHouseholdService _householdService;
+    private readonly ISubscriptionService _subscriptionService;
 
-    public AccountsController(IAccountService accountService, IHouseholdService householdService)
+    public AccountsController(
+        IAccountService accountService,
+        IHouseholdService householdService,
+        ISubscriptionService subscriptionService)
     {
         _accountService = accountService;
         _householdService = householdService;
+        _subscriptionService = subscriptionService;
     }
 
     private Guid? UserId
@@ -96,6 +101,9 @@ public class AccountsController : ControllerBase
         var householdId = await ResolveHouseholdIdAsync(cancellationToken);
         if (householdId == null)
             return NotFound();
+
+        if (!await _subscriptionService.CanAddAccountAsync(householdId.Value, cancellationToken))
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free só podes ter 1 conta. Atualiza para Pro ou Couple." });
 
         var account = await _accountService.CreateAsync(request, householdId.Value, UserId.Value, cancellationToken);
         return account == null ? NotFound() : CreatedAtAction(nameof(GetById), new { id = account.Id }, account);

@@ -12,4 +12,5 @@ public class Household : BaseEntity
     public ICollection<Account> Accounts { get; set; } = new List<Account>();
     public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
     public ICollection<SavingsObjective> SavingsObjectives { get; set; } = new List<SavingsObjective>();
+    public ICollection<Subscription> Subscriptions { get; set; } = new List<Subscription>();
 }

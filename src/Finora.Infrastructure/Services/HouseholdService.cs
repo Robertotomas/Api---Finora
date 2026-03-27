@@ -8,11 +8,16 @@ public class HouseholdService : IHouseholdService
 {
     private readonly IHouseholdRepository _householdRepository;
     private readonly IUserRepository _userRepository;
+    private readonly ISubscriptionService _subscriptionService;
 
-    public HouseholdService(IHouseholdRepository householdRepository, IUserRepository userRepository)
+    public HouseholdService(
+        IHouseholdRepository householdRepository,
+        IUserRepository userRepository,
+        ISubscriptionService subscriptionService)
     {
         _householdRepository = householdRepository;
         _userRepository = userRepository;
+        _subscriptionService = subscriptionService;
     }
 
     public async Task<HouseholdDto?> GetByIdAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
@@ -22,7 +27,7 @@ public class HouseholdService : IHouseholdService
             return null;
 
         var household = await _householdRepository.GetByIdAsync(id, cancellationToken);
-        return household == null ? null : ToDto(household);
+        return household == null ? null : await ToDtoAsync(household, cancellationToken);
     }
 
     public async Task<IReadOnlyList<HouseholdMemberDto>> GetMembersAsync(Guid householdId, Guid userId, CancellationToken cancellationToken = default)
@@ -50,7 +55,7 @@ public class HouseholdService : IHouseholdService
         if (user.HouseholdId.HasValue)
         {
             var household = await _householdRepository.GetByIdAsync(user.HouseholdId.Value, cancellationToken);
-            return household == null ? null : ToDto(household);
+            return household == null ? null : await ToDtoAsync(household, cancellationToken);
         }
 
         var newHousehold = new Domain.Entities.Household
@@ -66,7 +71,7 @@ public class HouseholdService : IHouseholdService
         user.UpdatedAt = DateTime.UtcNow;
         await _userRepository.UpdateAsync(user, cancellationToken);
 
-        return ToDto(newHousehold);
+        return await ToDtoAsync(newHousehold, cancellationToken);
     }
 
     public async Task<HouseholdDto?> UpdateAsync(Guid id, UpdateHouseholdRequest request, Guid userId, CancellationToken cancellationToken = default)
@@ -84,16 +89,18 @@ public class HouseholdService : IHouseholdService
         household.UpdatedAt = DateTime.UtcNow;
 
         await _householdRepository.SaveChangesAsync(cancellationToken);
-        return ToDto(household);
+        return await ToDtoAsync(household, cancellationToken);
     }
 
-    private static HouseholdDto ToDto(Domain.Entities.Household household)
+    private async Task<HouseholdDto> ToDtoAsync(Domain.Entities.Household household, CancellationToken cancellationToken)
     {
+        var plan = await _subscriptionService.GetActivePlanAsync(household.Id, cancellationToken);
         return new HouseholdDto
         {
             Id = household.Id,
             Type = household.Type,
-            Name = household.Name
+            Name = household.Name,
+            CurrentPlan = (plan ?? SubscriptionPlan.Free).ToString()
         };
     }
 }
