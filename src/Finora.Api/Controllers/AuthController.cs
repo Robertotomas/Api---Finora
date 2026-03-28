@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Finora.Application.DTOs.Auth;
 using Finora.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -65,8 +66,8 @@ public class AuthController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public IActionResult GetCurrentUser()
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? User.FindFirst("email")?.Value;
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var email = User.FindFirst(ClaimTypes.Email)?.Value ?? User.FindFirst("email")?.Value;
 
         if (string.IsNullOrEmpty(userId))
             return Unauthorized();
@@ -76,5 +77,50 @@ public class AuthController : ControllerBase
             id = userId,
             email = email
         });
+    }
+
+    /// <summary>
+    /// Get full profile from database (requires authentication).
+    /// </summary>
+    [HttpGet("profile")]
+    [Authorize]
+    [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<UserDto>> GetProfile(CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
+
+        var dto = await _authService.GetProfileAsync(userId, cancellationToken);
+        return dto == null ? NotFound() : Ok(dto);
+    }
+
+    /// <summary>
+    /// Update profile (name and gender). Email is not changed here.
+    /// </summary>
+    [HttpPut("profile")]
+    [Authorize]
+    [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<UserDto>> UpdateProfile([FromBody] UpdateProfileRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
+
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var dto = await _authService.UpdateProfileAsync(userId, request, cancellationToken);
+        return dto == null ? NotFound() : Ok(dto);
+    }
+
+    private bool TryGetUserId(out Guid userId)
+    {
+        userId = default;
+        var raw = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return !string.IsNullOrEmpty(raw) && Guid.TryParse(raw, out userId);
     }
 }

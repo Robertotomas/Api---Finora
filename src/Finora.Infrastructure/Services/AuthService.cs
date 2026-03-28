@@ -84,6 +84,35 @@ public class AuthService : IAuthService
         return await GenerateAuthResponseAsync(user, cancellationToken);
     }
 
+    public async Task<UserDto?> GetProfileAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        return user == null ? null : MapToDto(user);
+    }
+
+    public async Task<UserDto?> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken cancellationToken = default)
+    {
+        var user = await _userRepository.GetByIdTrackedAsync(userId, cancellationToken);
+        if (user == null)
+            return null;
+
+        user.FirstName = request.FirstName.Trim();
+        user.LastName = request.LastName.Trim();
+        user.Gender = request.Gender;
+        await _userRepository.UpdateAsync(user, cancellationToken);
+        return MapToDto(user);
+    }
+
+    private static UserDto MapToDto(User user) => new()
+    {
+        Id = user.Id,
+        Email = user.Email,
+        FirstName = user.FirstName,
+        LastName = user.LastName,
+        Gender = user.Gender,
+        HouseholdId = user.HouseholdId
+    };
+
     private Task<AuthResponse> GenerateAuthResponseAsync(User user, CancellationToken cancellationToken)
     {
         var token = GenerateJwtToken(user);
@@ -94,15 +123,7 @@ public class AuthService : IAuthService
             AccessToken = token,
             TokenType = "Bearer",
             ExpiresIn = expiresIn,
-            User = new UserDto
-            {
-                Id = user.Id,
-                Email = user.Email,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                Gender = user.Gender,
-                HouseholdId = user.HouseholdId
-            }
+            User = MapToDto(user)
         };
 
         return Task.FromResult(response);
