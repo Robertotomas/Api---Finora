@@ -83,6 +83,9 @@ public class SubscriptionService : ISubscriptionService
         return plan != SubscriptionPlan.Free;
     }
 
+    public Task<bool> CanAccessMonthlyReportsAsync(Guid householdId, CancellationToken cancellationToken = default)
+        => CanAccessObjectivesAsync(householdId, cancellationToken);
+
     public async Task UpgradeAsync(Guid householdId, SubscriptionPlan plan, CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;

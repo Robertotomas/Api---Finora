@@ -50,3 +50,6 @@ coverage/
 
 # Cursor / IDE
 .cursor
+
+# Generated monthly PDFs (local / server)
+uploads/

@@ -1,4 +1,6 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using Finora.Api.Extensions;
 using Finora.Application.DTOs.Auth;
 using Finora.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -66,15 +68,17 @@ public class AuthController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public IActionResult GetCurrentUser()
     {
-        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var email = User.FindFirst(ClaimTypes.Email)?.Value ?? User.FindFirst("email")?.Value;
+        var id = User.GetUserId();
+        var email = User.FindFirst(ClaimTypes.Email)?.Value
+            ?? User.FindFirst(JwtRegisteredClaimNames.Email)?.Value
+            ?? User.FindFirst("email")?.Value;
 
-        if (string.IsNullOrEmpty(userId))
+        if (id == null)
             return Unauthorized();
 
         return Ok(new
         {
-            id = userId,
+            id = id.Value.ToString(),
             email = email
         });
     }
@@ -120,7 +124,10 @@ public class AuthController : ControllerBase
     private bool TryGetUserId(out Guid userId)
     {
         userId = default;
-        var raw = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        return !string.IsNullOrEmpty(raw) && Guid.TryParse(raw, out userId);
+        var id = User.GetUserId();
+        if (id == null)
+            return false;
+        userId = id.Value;
+        return true;
     }
 }

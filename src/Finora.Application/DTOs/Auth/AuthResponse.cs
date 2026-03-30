@@ -18,4 +18,5 @@ public record UserDto
     public string LastName { get; init; } = string.Empty;
     public Gender? Gender { get; init; }
     public Guid? HouseholdId { get; init; }
+    public string? TimeZoneId { get; init; }
 }

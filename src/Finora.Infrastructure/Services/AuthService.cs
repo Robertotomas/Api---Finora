@@ -99,6 +99,8 @@ public class AuthService : IAuthService
         user.FirstName = request.FirstName.Trim();
         user.LastName = request.LastName.Trim();
         user.Gender = request.Gender;
+        if (request.TimeZoneId != null)
+            user.TimeZoneId = string.IsNullOrWhiteSpace(request.TimeZoneId) ? null : request.TimeZoneId.Trim();
         await _userRepository.UpdateAsync(user, cancellationToken);
         return MapToDto(user);
     }
@@ -110,7 +112,8 @@ public class AuthService : IAuthService
         FirstName = user.FirstName,
         LastName = user.LastName,
         Gender = user.Gender,
-        HouseholdId = user.HouseholdId
+        HouseholdId = user.HouseholdId,
+        TimeZoneId = user.TimeZoneId
     };
 
     private Task<AuthResponse> GenerateAuthResponseAsync(User user, CancellationToken cancellationToken)

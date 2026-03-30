@@ -19,6 +19,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<RecurringTransaction> RecurringTransactions => Set<RecurringTransaction>();
     public DbSet<SavingsObjective> SavingsObjectives => Set<SavingsObjective>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
+    public DbSet<MonthlyReport> MonthlyReports => Set<MonthlyReport>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -46,6 +47,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.FirstName).HasMaxLength(100);
             entity.Property(e => e.LastName).HasMaxLength(100);
             entity.Property(e => e.Gender).HasConversion<int>().IsRequired(false);
+            entity.Property(e => e.TimeZoneId).HasMaxLength(100);
 
             entity.HasOne(e => e.Household)
                 .WithMany(h => h.Users)
@@ -146,6 +148,18 @@ public class ApplicationDbContext : DbContext
 
             entity.HasOne(e => e.Household)
                 .WithMany(h => h.Subscriptions)
+                .HasForeignKey(e => e.HouseholdId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<MonthlyReport>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.FileRelativePath).HasMaxLength(500);
+            entity.HasIndex(e => new { e.HouseholdId, e.Year, e.Month }).IsUnique();
+
+            entity.HasOne(e => e.Household)
+                .WithMany(h => h.MonthlyReports)
                 .HasForeignKey(e => e.HouseholdId)
                 .OnDelete(DeleteBehavior.Cascade);
         });

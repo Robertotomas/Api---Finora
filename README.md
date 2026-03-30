@@ -51,3 +51,25 @@ API: http://localhost:5000 | Swagger: http://localhost:5000/swagger
 | POST | `/api/auth/register` | No | Register new user |
 | POST | `/api/auth/login` | No | Login, returns JWT |
 | GET | `/api/auth/me` | Bearer | Get current user |
+
+## Monthly PDF reports (Playwright)
+
+Monthly reports are rendered with **Playwright** (Chromium). After the first `dotnet build`, install browsers once (from the API output folder or project directory):
+
+```bash
+cd src/Finora.Api
+dotnet build
+pwsh bin/Debug/net9.0/playwright.ps1 install chromium
+```
+
+On Windows you can also run `playwright.ps1` from `bin/Debug/net9.0/` after build. PDFs are stored under `uploads/reports/` (ignored by git).
+
+In **Development**, you can trigger a report manually: `POST /api/reports/generate?year=2025&month=3` (Bearer token, Pro/Couple household).
+
+## Reports API
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/reports` | Bearer | List PDF metadata (optional `?year=&month=`) |
+| GET | `/api/reports/{id}/download` | Bearer | Download PDF |
+| POST | `/api/reports/generate` | Bearer | **Development only** — generate for `year`/`month` |

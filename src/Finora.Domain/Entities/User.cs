@@ -13,4 +13,7 @@ public class User : BaseEntity
 
     public Guid? HouseholdId { get; set; }
     public Household? Household { get; set; }
+
+    /// <summary>IANA timezone id (e.g. Europe/Lisbon) for scheduling monthly reports.</summary>
+    public string? TimeZoneId { get; set; }
 }

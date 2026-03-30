@@ -61,6 +61,7 @@ public class SubscriptionController : ControllerBase
         public int? IncomeRemainingThisMonth { get; init; }
         public int? ExpensesRemainingThisMonth { get; init; }
         public bool ObjectivesEnabled { get; init; }
+        public bool MonthlyReportsEnabled { get; init; }
         public bool CanInvite { get; init; }
         public bool NeedsPrimaryAccountSelection { get; init; }
         public Guid? PrimaryAccountId { get; init; }
@@ -94,6 +95,7 @@ public class SubscriptionController : ControllerBase
         int? incomeRemaining = null;
         int? expensesRemaining = null;
         var objectivesEnabled = effectivePlan != SubscriptionPlan.Free;
+        var monthlyReportsEnabled = objectivesEnabled;
         var canInvite = effectivePlan == SubscriptionPlan.Couple;
 
         if (effectivePlan == SubscriptionPlan.Free)
@@ -121,6 +123,7 @@ public class SubscriptionController : ControllerBase
                 IncomeRemainingThisMonth = incomeRemaining,
                 ExpensesRemainingThisMonth = expensesRemaining,
                 ObjectivesEnabled = objectivesEnabled,
+                MonthlyReportsEnabled = monthlyReportsEnabled,
                 CanInvite = canInvite,
                 NeedsPrimaryAccountSelection = freeMulti && needsPrimary,
                 PrimaryAccountId = freeMulti && !needsPrimary ? primaryAccountId : null

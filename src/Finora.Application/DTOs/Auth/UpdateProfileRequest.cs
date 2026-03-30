@@ -14,4 +14,8 @@ public record UpdateProfileRequest
     public string LastName { get; init; } = string.Empty;
 
     public Gender? Gender { get; init; }
+
+    /// <summary>Optional IANA timezone (e.g. Europe/Lisbon).</summary>
+    [MaxLength(100)]
+    public string? TimeZoneId { get; init; }
 }

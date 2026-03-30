@@ -46,4 +46,12 @@ public class HouseholdRepository : IHouseholdRepository
     {
         await _context.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<Guid>> GetAllHouseholdIdsAsync(CancellationToken cancellationToken = default)
+    {
+        return await _context.Households
+            .AsNoTracking()
+            .Select(h => h.Id)
+            .ToListAsync(cancellationToken);
+    }
 }

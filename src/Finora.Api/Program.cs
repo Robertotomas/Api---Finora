@@ -28,6 +28,7 @@ builder.Services.AddApplicationServices();
 builder.Services.AddDatabase(builder.Configuration);
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddSwaggerWithJwt();
+builder.Services.AddHostedService<Finora.Api.Services.MonthlyReportGeneratorHostedService>();
 
 var app = builder.Build();
 
