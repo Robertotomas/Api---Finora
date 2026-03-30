@@ -52,4 +52,14 @@ public class SavingsObjectiveRepository : ISavingsObjectiveRepository
         await _context.SaveChangesAsync(cancellationToken);
         return objective;
     }
+
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var entity = await _context.SavingsObjectives.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (entity == null)
+            return false;
+        _context.SavingsObjectives.Remove(entity);
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
 }

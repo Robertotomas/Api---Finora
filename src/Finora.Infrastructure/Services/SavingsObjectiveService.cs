@@ -127,6 +127,28 @@ public class SavingsObjectiveService : ISavingsObjectiveService
         return await BuildOverviewAsync(objective.HouseholdId, all, cancellationToken);
     }
 
+    public async Task<SavingsObjectivesOverviewDto?> DeleteAsync(
+        Guid objectiveId,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var objective = await _objectivesRepository.GetByIdAsync(objectiveId, cancellationToken);
+        if (objective == null)
+            return null;
+        if (!await UserBelongsToHouseholdAsync(userId, objective.HouseholdId, cancellationToken))
+            return null;
+        if (!await _subscriptionService.CanAccessObjectivesAsync(objective.HouseholdId, cancellationToken))
+            return null;
+
+        var householdId = objective.HouseholdId;
+        var deleted = await _objectivesRepository.DeleteAsync(objectiveId, cancellationToken);
+        if (!deleted)
+            return null;
+
+        var all = await _objectivesRepository.GetByHouseholdAsync(householdId, cancellationToken);
+        return await BuildOverviewAsync(householdId, all, cancellationToken);
+    }
+
     private async Task<SavingsObjectivesOverviewDto> BuildOverviewAsync(
         Guid householdId,
         IReadOnlyList<SavingsObjective> objectives,
