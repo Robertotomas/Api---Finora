@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using Finora.Application.DTOs.Dashboard;
+using Finora.Application.DTOs.Reports;
 using Finora.Application.Interfaces;
 using Finora.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -134,6 +135,57 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
                 .FirstOrDefault();
             return existing?.Id;
         }
+    }
+
+    public async Task<MonthlyReportListItemDto?> RegenerateReportAsync(
+        Guid reportId,
+        Guid householdId,
+        Guid actingUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var report = await _monthlyReportRepository.GetByIdAsync(reportId, cancellationToken);
+        if (report == null || report.HouseholdId != householdId)
+            return null;
+
+        if (!await _subscriptionService.CanAccessMonthlyReportsAsync(householdId, cancellationToken))
+            return null;
+
+        var dashboard = await _dashboardService.GetDashboardAsync(
+            householdId,
+            actingUserId,
+            report.Year,
+            report.Month,
+            trendMonths: 6,
+            cancellationToken);
+
+        var uploadsRoot = Path.Combine(_hostEnvironment.ContentRootPath, "uploads");
+        var relativeNorm = report.FileRelativePath.Replace('/', Path.DirectorySeparatorChar);
+        var fullPath = Path.Combine(uploadsRoot, relativeNorm);
+        var dir = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+
+        var html = BuildHtmlDocument(dashboard, report.Year, report.Month);
+        var pdfBytes = await RenderPdfAsync(html, cancellationToken);
+        await File.WriteAllBytesAsync(fullPath, pdfBytes, cancellationToken);
+
+        var generatedAt = DateTime.UtcNow;
+        var ok = await _monthlyReportRepository.UpdateGeneratedMetadataAsync(
+            reportId,
+            generatedAt,
+            pdfBytes.LongLength,
+            cancellationToken);
+        if (!ok)
+            return null;
+
+        return new MonthlyReportListItemDto
+        {
+            Id = reportId,
+            Year = report.Year,
+            Month = report.Month,
+            GeneratedAt = generatedAt,
+            FileSizeBytes = pdfBytes.LongLength
+        };
     }
 
     private static TimeZoneInfo ResolveTimeZone(string? timeZoneId)

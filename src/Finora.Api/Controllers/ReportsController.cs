@@ -95,6 +95,26 @@ public class ReportsController : ControllerBase
         return File(stream, "application/pdf", fileName);
     }
 
+    [HttpPost("{id:guid}/refresh")]
+    [ProducesResponseType(typeof(MonthlyReportListItemDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<MonthlyReportListItemDto>> Refresh(Guid id, CancellationToken cancellationToken)
+    {
+        if (UserId is not { } userId)
+            return Unauthorized();
+
+        var householdId = await ResolveHouseholdIdAsync(cancellationToken);
+        if (householdId == null)
+            return NotFound();
+
+        if (!await _subscriptionService.CanAccessMonthlyReportsAsync(householdId.Value, cancellationToken))
+            return Forbid();
+
+        var dto = await _generationService.RegenerateReportAsync(id, householdId.Value, userId, cancellationToken);
+        return dto == null ? NotFound() : Ok(dto);
+    }
+
     /// <summary>Debug: generate PDF for a month (Development only).</summary>
     [HttpPost("generate")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]

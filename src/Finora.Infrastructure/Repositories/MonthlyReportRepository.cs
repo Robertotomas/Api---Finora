@@ -53,4 +53,20 @@ public class MonthlyReportRepository : IMonthlyReportRepository
     {
         await _context.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<bool> UpdateGeneratedMetadataAsync(
+        Guid id,
+        DateTime generatedAt,
+        long fileSizeBytes,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await _context.MonthlyReports.FindAsync(new object[] { id }, cancellationToken);
+        if (entity == null)
+            return false;
+        entity.GeneratedAt = generatedAt;
+        entity.FileSizeBytes = fileSizeBytes;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
 }

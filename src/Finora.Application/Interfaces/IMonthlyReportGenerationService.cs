@@ -1,3 +1,5 @@
+using Finora.Application.DTOs.Reports;
+
 namespace Finora.Application.Interfaces;
 
 public interface IMonthlyReportGenerationService
@@ -8,6 +10,13 @@ public interface IMonthlyReportGenerationService
         Guid actingUserId,
         int year,
         int month,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Regenerates the PDF for an existing report (e.g. after transactions changed).</summary>
+    Task<MonthlyReportListItemDto?> RegenerateReportAsync(
+        Guid reportId,
+        Guid householdId,
+        Guid actingUserId,
         CancellationToken cancellationToken = default);
 
     /// <summary>Scheduler entry: generates due reports for Pro/Couple households on day 1 (per user timezone).</summary>

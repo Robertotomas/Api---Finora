@@ -9,4 +9,5 @@ public interface IMonthlyReportRepository
     Task<IReadOnlyList<MonthlyReport>> ListByHouseholdAsync(Guid householdId, int? year, int? month, CancellationToken cancellationToken = default);
     Task<MonthlyReport> AddAsync(MonthlyReport report, CancellationToken cancellationToken = default);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
+    Task<bool> UpdateGeneratedMetadataAsync(Guid id, DateTime generatedAt, long fileSizeBytes, CancellationToken cancellationToken = default);
 }
