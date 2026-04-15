@@ -12,4 +12,7 @@ public interface IHouseholdRepository
 
     /// <summary>All household ids (for background jobs).</summary>
     Task<IReadOnlyList<Guid>> GetAllHouseholdIdsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a household (e.g. empty orphan after user moved to another household).</summary>
+    Task DeleteAsync(Household household, CancellationToken cancellationToken = default);
 }

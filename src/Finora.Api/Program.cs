@@ -8,6 +8,10 @@ var builder = WebApplication.CreateBuilder(args);
 // appsettings.Local.json overrides (optional, in .gitignore)
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
+// User secrets must load AFTER Local, otherwise empty secrets in Local wipe values from the default Development chain.
+if (builder.Environment.IsDevelopment())
+    builder.Configuration.AddUserSecrets(typeof(Program).Assembly, optional: true);
+
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
@@ -24,7 +28,7 @@ builder.Services.AddControllers()
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
     });
-builder.Services.AddApplicationServices();
+builder.Services.AddApplicationServices(builder.Configuration);
 builder.Services.AddDatabase(builder.Configuration);
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddSwaggerWithJwt();

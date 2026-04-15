@@ -54,4 +54,10 @@ public class HouseholdRepository : IHouseholdRepository
             .Select(h => h.Id)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task DeleteAsync(Household household, CancellationToken cancellationToken = default)
+    {
+        _context.Households.Remove(household);
+        await _context.SaveChangesAsync(cancellationToken);
+    }
 }

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Finora.Application.DTOs.Auth;
 using Finora.Application.DTOs.Household;
 using Finora.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -12,10 +13,12 @@ namespace Finora.Api.Controllers;
 public class HouseholdController : ControllerBase
 {
     private readonly IHouseholdService _householdService;
+    private readonly IAuthService _authService;
 
-    public HouseholdController(IHouseholdService householdService)
+    public HouseholdController(IHouseholdService householdService, IAuthService authService)
     {
         _householdService = householdService;
+        _authService = authService;
     }
 
     private Guid? UserId
@@ -101,5 +104,26 @@ public class HouseholdController : ControllerBase
 
         var household = await _householdService.SetPrimaryAccountAsync(UserId.Value, request, cancellationToken);
         return household == null ? NotFound() : Ok(household);
+    }
+
+    /// <summary>Leave Couple household: cancels plan for the shared household, both users end on Free; returns a new JWT with updated <c>household_id</c>.</summary>
+    [HttpPost("me/leave-couple")]
+    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AuthResponse>> LeaveCouple(CancellationToken cancellationToken)
+    {
+        if (UserId == null)
+            return Unauthorized();
+
+        try
+        {
+            await _householdService.LeaveCoupleHouseholdAsync(UserId.Value, cancellationToken);
+            var auth = await _authService.RefreshTokenAsync(UserId.Value, cancellationToken);
+            return Ok(auth);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 }

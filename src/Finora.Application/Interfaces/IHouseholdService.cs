@@ -9,4 +9,7 @@ public interface IHouseholdService
     Task<HouseholdDto?> GetOrCreateForUserAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<HouseholdDto?> UpdateAsync(Guid id, UpdateHouseholdRequest request, Guid userId, CancellationToken cancellationToken = default);
     Task<HouseholdDto?> SetPrimaryAccountAsync(Guid userId, SetPrimaryAccountRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Leave a Couple household: cancels subscriptions, both sides end on Free; leaver gets a new individual household when two members were present.</summary>
+    Task LeaveCoupleHouseholdAsync(Guid userId, CancellationToken cancellationToken = default);
 }

@@ -33,7 +33,7 @@ public class AuthController : ControllerBase
             var response = await _authService.RegisterAsync(request, cancellationToken);
             return Ok(response);
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
+        catch (InvalidOperationException ex) when (ex.Message.Contains("already exists") || ex.Message.Contains("Convite"))
         {
             return BadRequest(new { message = ex.Message });
         }

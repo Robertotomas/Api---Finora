@@ -25,4 +25,7 @@ public record RegisterRequest
     public string LastName { get; init; } = string.Empty;
 
     public Gender? Gender { get; init; }
+
+    /// <summary>Optional invite token from email (Couple plan new-account flow).</summary>
+    public string? InviteToken { get; init; }
 }

@@ -20,6 +20,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<SavingsObjective> SavingsObjectives => Set<SavingsObjective>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
     public DbSet<MonthlyReport> MonthlyReports => Set<MonthlyReport>();
+    public DbSet<CoupleInvitation> CoupleInvitations => Set<CoupleInvitation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -161,6 +162,27 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(e => e.Household)
                 .WithMany(h => h.MonthlyReports)
                 .HasForeignKey(e => e.HouseholdId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CoupleInvitation>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.InviteeEmail).HasMaxLength(256);
+            entity.Property(e => e.TokenHash).HasMaxLength(64);
+            entity.Property(e => e.OtpHash).HasMaxLength(64);
+            entity.Property(e => e.Status).HasConversion<int>();
+            entity.Property(e => e.Kind).HasConversion<int>();
+            entity.HasIndex(e => e.TokenHash);
+
+            entity.HasOne(e => e.InviterUser)
+                .WithMany()
+                .HasForeignKey(e => e.InviterUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.InviterHousehold)
+                .WithMany()
+                .HasForeignKey(e => e.InviterHouseholdId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

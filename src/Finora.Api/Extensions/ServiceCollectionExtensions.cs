@@ -7,6 +7,7 @@ using Finora.Infrastructure.Persistence;
 using Finora.Infrastructure.Repositories;
 using Finora.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -15,8 +16,16 @@ namespace Finora.Api.Extensions;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    public static IServiceCollection AddApplicationServices(this IServiceCollection services, IConfiguration configuration)
     {
+        services.Configure<AppOptions>(configuration.GetSection(AppOptions.SectionName));
+        services.Configure<PostmarkOptions>(configuration.GetSection(PostmarkOptions.SectionName));
+
+        services.AddHttpClient<IEmailService, PostmarkEmailService>(client =>
+        {
+            client.BaseAddress = new Uri("https://api.postmarkapp.com/");
+        });
+
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IHouseholdService, HouseholdService>();
         services.AddScoped<IAccountService, AccountService>();
@@ -36,6 +45,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITransactionRepository, TransactionRepository>();
         services.AddScoped<IMonthlyReportRepository, MonthlyReportRepository>();
         services.AddScoped<IMonthlyReportGenerationService, MonthlyReportGenerationService>();
+        services.AddScoped<ICoupleInvitationRepository, CoupleInvitationRepository>();
+        services.AddScoped<ICoupleInvitationService, CoupleInvitationService>();
         return services;
     }
 

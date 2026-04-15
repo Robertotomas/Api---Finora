@@ -16,22 +16,53 @@ public class AuthService : IAuthService
     private readonly IUserRepository _userRepository;
     private readonly IHouseholdRepository _householdRepository;
     private readonly ISubscriptionRepository _subscriptionRepository;
+    private readonly ICoupleInvitationService _coupleInvitationService;
     private readonly JwtOptions _jwtOptions;
 
     public AuthService(
         IUserRepository userRepository,
         IHouseholdRepository householdRepository,
         ISubscriptionRepository subscriptionRepository,
+        ICoupleInvitationService coupleInvitationService,
         IOptions<JwtOptions> jwtOptions)
     {
         _userRepository = userRepository;
         _householdRepository = householdRepository;
         _subscriptionRepository = subscriptionRepository;
+        _coupleInvitationService = coupleInvitationService;
         _jwtOptions = jwtOptions.Value;
     }
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
+        var emailNorm = request.Email.Trim().ToLowerInvariant();
+
+        if (!string.IsNullOrWhiteSpace(request.InviteToken))
+        {
+            var ctx = await _coupleInvitationService.PrepareNewUserInviteAsync(emailNorm, request.InviteToken, cancellationToken);
+            if (ctx == null)
+                throw new InvalidOperationException("Convite inválido ou expirado.");
+
+            if (await _userRepository.ExistsByEmailAsync(emailNorm, cancellationToken))
+                throw new InvalidOperationException("User with this email already exists.");
+
+            var invitedUser = new User
+            {
+                Id = Guid.NewGuid(),
+                Email = emailNorm,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, BCrypt.Net.BCrypt.GenerateSalt(12)),
+                FirstName = request.FirstName.Trim(),
+                LastName = request.LastName.Trim(),
+                Gender = request.Gender,
+                HouseholdId = ctx.TargetHouseholdId,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _userRepository.CreateAsync(invitedUser, cancellationToken);
+            await _coupleInvitationService.CompleteNewUserInviteAsync(ctx.InvitationId, cancellationToken);
+            return await GenerateAuthResponseAsync(invitedUser, cancellationToken);
+        }
+
         if (await _userRepository.ExistsByEmailAsync(request.Email, cancellationToken))
             throw new InvalidOperationException("User with this email already exists.");
 
@@ -103,6 +134,13 @@ public class AuthService : IAuthService
             user.TimeZoneId = string.IsNullOrWhiteSpace(request.TimeZoneId) ? null : request.TimeZoneId.Trim();
         await _userRepository.UpdateAsync(user, cancellationToken);
         return MapToDto(user);
+    }
+
+    public async Task<AuthResponse> RefreshTokenAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken)
+            ?? throw new InvalidOperationException("Utilizador não encontrado.");
+        return await GenerateAuthResponseAsync(user, cancellationToken);
     }
 
     private static UserDto MapToDto(User user) => new()
