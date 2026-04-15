@@ -88,4 +88,21 @@ public class CoupleInvitationRepository : ICoupleInvitationRepository
         if (entities.Count > 0)
             await _context.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task RevokeAllPendingForHouseholdAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        var entities = await _context.CoupleInvitations
+            .Where(i => i.InviterHouseholdId == householdId && i.Status == CoupleInvitationStatus.Pending)
+            .ToListAsync(cancellationToken);
+
+        var now = DateTime.UtcNow;
+        foreach (var e in entities)
+        {
+            e.Status = CoupleInvitationStatus.Revoked;
+            e.UpdatedAt = now;
+        }
+
+        if (entities.Count > 0)
+            await _context.SaveChangesAsync(cancellationToken);
+    }
 }

@@ -19,4 +19,7 @@ public interface ICoupleInvitationRepository
 
     /// <summary>Revoke pending invitations for this household + email before creating a new one.</summary>
     Task RevokePendingForHouseholdAndEmailAsync(Guid householdId, string inviteeEmailNormalized, CancellationToken cancellationToken = default);
+
+    /// <summary>Revoke every pending invitation for this household (e.g. new invite replaces any previous pending).</summary>
+    Task RevokeAllPendingForHouseholdAsync(Guid householdId, CancellationToken cancellationToken = default);
 }

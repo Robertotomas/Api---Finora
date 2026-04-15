@@ -74,12 +74,8 @@ public class CoupleInvitationService : ICoupleInvitationService
         if (members.Any(m => m.Email.Equals(emailNorm, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException("Este email já pertence ao teu agregado.");
 
-        // Antes de contar vagas: revoga convites pendentes para este email (reenvio ou envio que falhou após gravar).
-        await _invitationRepository.RevokePendingForHouseholdAndEmailAsync(householdId, emailNorm, cancellationToken);
-
-        var pendingCount = await _invitationRepository.CountPendingForHouseholdAsync(householdId, cancellationToken);
-        if (members.Count + pendingCount >= 2)
-            throw new InvalidOperationException("Já existe um convite pendente para outro email. Aguarda a aceitação ou tenta mais tarde.");
+        // Um convite novo substitui qualquer convite pendente (incl. outro email), para permitir reenvio e testes.
+        await _invitationRepository.RevokeAllPendingForHouseholdAsync(householdId, cancellationToken);
 
         var inviterName = $"{inviter.FirstName} {inviter.LastName}".Trim();
         if (string.IsNullOrEmpty(inviterName))
