@@ -18,4 +18,5 @@ public interface IRecurringTransactionRepository
     Task<IReadOnlyList<(int Category, decimal Amount)>> GetRecurringIncomeByCategoryAsync(Guid householdId, int year, int month, CancellationToken cancellationToken = default);
     Task<RecurringTransaction> CreateAsync(RecurringTransaction entity, CancellationToken cancellationToken = default);
     Task<RecurringTransaction> UpdateAsync(RecurringTransaction entity, CancellationToken cancellationToken = default);
+    Task<int> CountByAccountIdAsync(Guid accountId, CancellationToken cancellationToken = default);
 }

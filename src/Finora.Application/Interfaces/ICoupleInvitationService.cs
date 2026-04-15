@@ -15,6 +15,9 @@ public interface ICoupleInvitationService
     /// <summary>After user row is created; marks invite accepted and sets household type to Couple.</summary>
     Task CompleteNewUserInviteAsync(Guid invitationId, CancellationToken cancellationToken = default);
 
-    /// <summary>Logged-in user confirms OTP to join inviter household.</summary>
-    Task VerifyOtpAndJoinAsync(Guid userId, string otpCode, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Logged-in user confirms OTP to join inviter household.
+    /// If <paramref name="migratePersonalData"/> is true, moves contas/movimentos/recorrentes/objetivos from the current household into the inviter's; relatórios duplicados (mesmo mês/ano) no destino são descartados do agregado de origem.
+    /// </summary>
+    Task VerifyOtpAndJoinAsync(Guid userId, string otpCode, bool migratePersonalData, CancellationToken cancellationToken = default);
 }

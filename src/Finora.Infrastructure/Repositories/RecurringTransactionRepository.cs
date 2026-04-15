@@ -197,4 +197,11 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
         await _context.SaveChangesAsync(cancellationToken);
         return entity;
     }
+
+    public async Task<int> CountByAccountIdAsync(Guid accountId, CancellationToken cancellationToken = default)
+    {
+        return await _context.RecurringTransactions
+            .AsNoTracking()
+            .CountAsync(r => r.AccountId == accountId, cancellationToken);
+    }
 }

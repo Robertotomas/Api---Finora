@@ -137,13 +137,21 @@ public class AccountsController : ControllerBase
     /// </summary>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         if (UserId == null)
             return NotFound();
 
-        var deleted = await _accountService.DeleteAsync(id, UserId.Value, cancellationToken);
-        return deleted ? NoContent() : NotFound();
+        try
+        {
+            var deleted = await _accountService.DeleteAsync(id, UserId.Value, cancellationToken);
+            return deleted ? NoContent() : NotFound();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { code = "ACCOUNT_HAS_MOVEMENTS", message = ex.Message });
+        }
     }
 }

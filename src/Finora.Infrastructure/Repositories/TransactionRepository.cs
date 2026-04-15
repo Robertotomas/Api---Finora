@@ -82,4 +82,11 @@ public class TransactionRepository : ITransactionRepository
         _context.Transactions.Remove(transaction);
         await _context.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<int> CountByAccountIdAsync(Guid accountId, CancellationToken cancellationToken = default)
+    {
+        return await _context.Transactions
+            .AsNoTracking()
+            .CountAsync(t => t.AccountId == accountId, cancellationToken);
+    }
 }

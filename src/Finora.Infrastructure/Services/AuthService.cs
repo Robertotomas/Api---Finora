@@ -55,6 +55,8 @@ public class AuthService : IAuthService
                 LastName = request.LastName.Trim(),
                 Gender = request.Gender,
                 HouseholdId = ctx.TargetHouseholdId,
+                IsCoupleGuest = true,
+                CoupleJoinDataMigrated = null,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -151,7 +153,9 @@ public class AuthService : IAuthService
         LastName = user.LastName,
         Gender = user.Gender,
         HouseholdId = user.HouseholdId,
-        TimeZoneId = user.TimeZoneId
+        TimeZoneId = user.TimeZoneId,
+        IsCoupleGuest = user.IsCoupleGuest,
+        CoupleJoinDataMigrated = user.CoupleJoinDataMigrated
     };
 
     private Task<AuthResponse> GenerateAuthResponseAsync(User user, CancellationToken cancellationToken)

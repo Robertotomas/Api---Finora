@@ -9,6 +9,8 @@ public class AccountService : IAccountService
     private readonly IAccountRepository _accountRepository;
     private readonly IUserRepository _userRepository;
     private readonly IHouseholdRepository _householdRepository;
+    private readonly ITransactionRepository _transactionRepository;
+    private readonly IRecurringTransactionRepository _recurringTransactionRepository;
     private readonly IRecurringAccountBalanceService _recurringAccountBalanceService;
     private readonly ISubscriptionService _subscriptionService;
 
@@ -16,12 +18,16 @@ public class AccountService : IAccountService
         IAccountRepository accountRepository,
         IUserRepository userRepository,
         IHouseholdRepository householdRepository,
+        ITransactionRepository transactionRepository,
+        IRecurringTransactionRepository recurringTransactionRepository,
         IRecurringAccountBalanceService recurringAccountBalanceService,
         ISubscriptionService subscriptionService)
     {
         _accountRepository = accountRepository;
         _userRepository = userRepository;
         _householdRepository = householdRepository;
+        _transactionRepository = transactionRepository;
+        _recurringTransactionRepository = recurringTransactionRepository;
         _recurringAccountBalanceService = recurringAccountBalanceService;
         _subscriptionService = subscriptionService;
     }
@@ -117,6 +123,14 @@ public class AccountService : IAccountService
 
         if (!await UserBelongsToHouseholdAsync(userId, account.HouseholdId, cancellationToken))
             return false;
+
+        var txCount = await _transactionRepository.CountByAccountIdAsync(id, cancellationToken);
+        var recurringCount = await _recurringTransactionRepository.CountByAccountIdAsync(id, cancellationToken);
+        if (txCount > 0 || recurringCount > 0)
+        {
+            throw new InvalidOperationException(
+                "Não é possível eliminar esta conta porque existem movimentos ou recorrentes associados. Remove primeiro esses movimentos e recorrentes em Movimentos se quiseres continuar.");
+        }
 
         var householdId = account.HouseholdId;
         await _accountRepository.DeleteAsync(account, cancellationToken);

@@ -3,6 +3,8 @@ using Finora.Application.Interfaces;
 using Finora.Application.Options;
 using Finora.Domain.Entities;
 using Finora.Domain.Enums;
+using Finora.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace Finora.Infrastructure.Services;
@@ -23,6 +25,7 @@ public class CoupleInvitationService : ICoupleInvitationService
     private readonly IMonthlyReportRepository _monthlyReportRepository;
     private readonly IEmailService _emailService;
     private readonly AppOptions _appOptions;
+    private readonly ApplicationDbContext _db;
 
     public CoupleInvitationService(
         ICoupleInvitationRepository invitationRepository,
@@ -35,7 +38,8 @@ public class CoupleInvitationService : ICoupleInvitationService
         ISavingsObjectiveRepository savingsObjectiveRepository,
         IMonthlyReportRepository monthlyReportRepository,
         IEmailService emailService,
-        IOptions<AppOptions> appOptions)
+        IOptions<AppOptions> appOptions,
+        ApplicationDbContext db)
     {
         _invitationRepository = invitationRepository;
         _userRepository = userRepository;
@@ -48,6 +52,7 @@ public class CoupleInvitationService : ICoupleInvitationService
         _monthlyReportRepository = monthlyReportRepository;
         _emailService = emailService;
         _appOptions = appOptions.Value;
+        _db = db;
     }
 
     public async Task CreateInvitationAsync(Guid inviterUserId, string inviteeEmail, CancellationToken cancellationToken = default)
@@ -233,7 +238,7 @@ public class CoupleInvitationService : ICoupleInvitationService
         await _invitationRepository.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task VerifyOtpAndJoinAsync(Guid userId, string otpCode, CancellationToken cancellationToken = default)
+    public async Task VerifyOtpAndJoinAsync(Guid userId, string otpCode, bool migratePersonalData, CancellationToken cancellationToken = default)
     {
         var user = await _userRepository.GetByIdTrackedAsync(userId, cancellationToken)
             ?? throw new InvalidOperationException("Utilizador não encontrado.");
@@ -247,17 +252,37 @@ public class CoupleInvitationService : ICoupleInvitationService
         if (inv.InviterHouseholdId == user.HouseholdId)
             throw new InvalidOperationException("Já pertences a este agregado.");
 
-        await EnsureInviteeHouseholdIsEmptyAsync(userId, cancellationToken);
-
         var plan = await _subscriptionService.GetActivePlanAsync(inv.InviterHouseholdId, cancellationToken);
         if (plan != SubscriptionPlan.Couple)
             throw new InvalidOperationException("O convite já não é válido.");
 
-        var members = await _userRepository.GetByHouseholdIdAsync(inv.InviterHouseholdId, cancellationToken);
-        if (members.Count >= 2)
+        var targetMembers = await _userRepository.GetByHouseholdIdAsync(inv.InviterHouseholdId, cancellationToken);
+        if (targetMembers.Count >= 2)
             throw new InvalidOperationException("Este agregado já está completo.");
 
-        var oldHouseholdId = user.HouseholdId;
+        if (user.HouseholdId == null)
+            throw new InvalidOperationException("Agregado não encontrado.");
+
+        var oldHouseholdId = user.HouseholdId.Value;
+
+        var soleInMine = await _userRepository.GetByHouseholdIdAsync(oldHouseholdId, cancellationToken);
+        if (soleInMine.Count != 1)
+            throw new InvalidOperationException(
+                "Só podes aceitar o convite se fores o único membro do teu agregado atual.");
+
+        if (migratePersonalData)
+        {
+            var hadPersonalData = await HasPersonalHouseholdDataAsync(oldHouseholdId, cancellationToken);
+            await MigratePersonalHouseholdDataAsync(oldHouseholdId, inv.InviterHouseholdId, cancellationToken);
+            user.CoupleJoinDataMigrated = hadPersonalData;
+        }
+        else
+        {
+            await EnsureInviteeHouseholdIsEmptyAsync(userId, cancellationToken);
+            user.CoupleJoinDataMigrated = false;
+        }
+
+        user.IsCoupleGuest = true;
 
         var targetHousehold = await _householdRepository.GetByIdTrackedAsync(inv.InviterHouseholdId, cancellationToken);
         if (targetHousehold != null)
@@ -275,16 +300,89 @@ public class CoupleInvitationService : ICoupleInvitationService
 
         await _userRepository.UpdateAsync(user, cancellationToken);
 
-        if (oldHouseholdId.HasValue && oldHouseholdId.Value != inv.InviterHouseholdId)
+        if (oldHouseholdId != inv.InviterHouseholdId)
         {
-            var remaining = await _userRepository.GetByHouseholdIdAsync(oldHouseholdId.Value, cancellationToken);
+            var remaining = await _userRepository.GetByHouseholdIdAsync(oldHouseholdId, cancellationToken);
             if (remaining.Count == 0)
             {
-                var oldH = await _householdRepository.GetByIdTrackedAsync(oldHouseholdId.Value, cancellationToken);
+                var oldH = await _householdRepository.GetByIdTrackedAsync(oldHouseholdId, cancellationToken);
                 if (oldH != null)
                     await _householdRepository.DeleteAsync(oldH, cancellationToken);
             }
         }
+    }
+
+    private async Task<bool> HasPersonalHouseholdDataAsync(Guid householdId, CancellationToken cancellationToken)
+    {
+        var accounts = await _accountRepository.GetByHouseholdIdAsync(householdId, cancellationToken);
+        if (accounts.Count > 0) return true;
+        var transactions = await _transactionRepository.GetByHouseholdAsync(householdId, null, null, null, cancellationToken);
+        if (transactions.Count > 0) return true;
+        var recurring = await _recurringTransactionRepository.GetByHouseholdAsync(householdId, cancellationToken);
+        if (recurring.Count > 0) return true;
+        var objectives = await _savingsObjectiveRepository.GetByHouseholdAsync(householdId, cancellationToken);
+        if (objectives.Count > 0) return true;
+        var reports = await _monthlyReportRepository.ListByHouseholdAsync(householdId, null, null, cancellationToken);
+        return reports.Count > 0;
+    }
+
+    private async Task MigratePersonalHouseholdDataAsync(Guid sourceHouseholdId, Guid targetHouseholdId, CancellationToken cancellationToken)
+    {
+        var utc = DateTime.UtcNow;
+
+        var sourceHousehold = await _db.Households.FirstOrDefaultAsync(h => h.Id == sourceHouseholdId, cancellationToken);
+        if (sourceHousehold != null)
+        {
+            sourceHousehold.PrimaryAccountId = null;
+            sourceHousehold.UpdatedAt = utc;
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+
+        var targetPeriods = await _db.MonthlyReports
+            .AsNoTracking()
+            .Where(r => r.HouseholdId == targetHouseholdId)
+            .Select(r => new { r.Year, r.Month })
+            .ToListAsync(cancellationToken);
+        var taken = targetPeriods.Select(x => (x.Year, x.Month)).ToHashSet();
+
+        var sourceReports = await _db.MonthlyReports.Where(r => r.HouseholdId == sourceHouseholdId).ToListAsync(cancellationToken);
+        foreach (var r in sourceReports)
+        {
+            if (taken.Contains((r.Year, r.Month)))
+                _db.MonthlyReports.Remove(r);
+            else
+            {
+                r.HouseholdId = targetHouseholdId;
+                r.UpdatedAt = utc;
+                taken.Add((r.Year, r.Month));
+            }
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        await _db.Accounts
+            .Where(a => a.HouseholdId == sourceHouseholdId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(a => a.HouseholdId, targetHouseholdId)
+                .SetProperty(a => a.UpdatedAt, utc), cancellationToken);
+
+        await _db.Transactions
+            .Where(t => t.HouseholdId == sourceHouseholdId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(t => t.HouseholdId, targetHouseholdId)
+                .SetProperty(t => t.UpdatedAt, utc), cancellationToken);
+
+        await _db.RecurringTransactions
+            .Where(rt => rt.HouseholdId == sourceHouseholdId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(rt => rt.HouseholdId, targetHouseholdId)
+                .SetProperty(rt => rt.UpdatedAt, utc), cancellationToken);
+
+        await _db.SavingsObjectives
+            .Where(o => o.HouseholdId == sourceHouseholdId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(o => o.HouseholdId, targetHouseholdId)
+                .SetProperty(o => o.UpdatedAt, utc), cancellationToken);
     }
 
     private async Task EnsureInviteeHouseholdIsEmptyAsync(Guid userId, CancellationToken cancellationToken)

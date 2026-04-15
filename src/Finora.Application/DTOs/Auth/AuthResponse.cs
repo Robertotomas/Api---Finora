@@ -19,4 +19,6 @@ public record UserDto
     public Gender? Gender { get; init; }
     public Guid? HouseholdId { get; init; }
     public string? TimeZoneId { get; init; }
+    public bool IsCoupleGuest { get; init; }
+    public bool? CoupleJoinDataMigrated { get; init; }
 }

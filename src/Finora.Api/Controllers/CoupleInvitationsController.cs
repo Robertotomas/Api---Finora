@@ -38,6 +38,8 @@ public class CoupleInvitationsController : ControllerBase
     public record VerifyOtpRequest
     {
         public string Code { get; init; } = string.Empty;
+        /// <summary>When true, migrates dados do agregado atual para o do convite. When false, o agregado atual tem de estar vazio.</summary>
+        public bool MigratePersonalData { get; init; }
     }
 
     /// <summary>Invite partner by email (Couple plan). Sends signup link or OTP.</summary>
@@ -92,7 +94,7 @@ public class CoupleInvitationsController : ControllerBase
 
         try
         {
-            await _coupleInvitationService.VerifyOtpAndJoinAsync(uid, request.Code, cancellationToken);
+            await _coupleInvitationService.VerifyOtpAndJoinAsync(uid, request.Code, request.MigratePersonalData, cancellationToken);
             var auth = await _authService.RefreshTokenAsync(uid, cancellationToken);
             return Ok(auth);
         }

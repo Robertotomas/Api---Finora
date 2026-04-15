@@ -12,4 +12,5 @@ public interface ITransactionRepository
     Task<Transaction> CreateAsync(Transaction transaction, CancellationToken cancellationToken = default);
     Task<Transaction> UpdateAsync(Transaction transaction, CancellationToken cancellationToken = default);
     Task DeleteAsync(Transaction transaction, CancellationToken cancellationToken = default);
+    Task<int> CountByAccountIdAsync(Guid accountId, CancellationToken cancellationToken = default);
 }
