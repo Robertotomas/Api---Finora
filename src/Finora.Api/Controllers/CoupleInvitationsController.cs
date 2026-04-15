@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Finora.Application.DTOs.Auth;
 using Finora.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -10,10 +11,14 @@ namespace Finora.Api.Controllers;
 public class CoupleInvitationsController : ControllerBase
 {
     private readonly ICoupleInvitationService _coupleInvitationService;
+    private readonly IAuthService _authService;
 
-    public CoupleInvitationsController(ICoupleInvitationService coupleInvitationService)
+    public CoupleInvitationsController(
+        ICoupleInvitationService coupleInvitationService,
+        IAuthService authService)
     {
         _coupleInvitationService = coupleInvitationService;
+        _authService = authService;
     }
 
     private Guid? UserId
@@ -75,12 +80,12 @@ public class CoupleInvitationsController : ControllerBase
         });
     }
 
-    /// <summary>Confirm OTP for existing account (logged-in user).</summary>
+    /// <summary>Confirm OTP for existing account (logged-in user). Returns a new JWT with updated <c>household_id</c>.</summary>
     [HttpPost("verify-otp")]
     [Authorize]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<AuthResponse>> VerifyOtp([FromBody] VerifyOtpRequest request, CancellationToken cancellationToken)
     {
         if (UserId is not { } uid)
             return Unauthorized();
@@ -88,7 +93,8 @@ public class CoupleInvitationsController : ControllerBase
         try
         {
             await _coupleInvitationService.VerifyOtpAndJoinAsync(uid, request.Code, cancellationToken);
-            return NoContent();
+            var auth = await _authService.RefreshTokenAsync(uid, cancellationToken);
+            return Ok(auth);
         }
         catch (InvalidOperationException ex)
         {
