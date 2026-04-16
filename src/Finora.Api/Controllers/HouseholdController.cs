@@ -126,4 +126,40 @@ public class HouseholdController : ControllerBase
             return BadRequest(new { message = ex.Message });
         }
     }
+
+    /// <summary>Clears the &quot;partner left&quot; banner for the remaining member without deleting data.</summary>
+    [HttpPost("me/dismiss-partner-left-notice")]
+    [ProducesResponseType(typeof(HouseholdDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<HouseholdDto>> DismissPartnerLeftNotice(CancellationToken cancellationToken)
+    {
+        if (UserId == null)
+            return Unauthorized();
+
+        var dto = await _householdService.DismissPartnerLeftNoticeAsync(UserId.Value, cancellationToken);
+        return dto == null ? NotFound() : Ok(dto);
+    }
+
+    /// <summary>Deletes all financial data for the current household (irreversible). Requires confirm phrase RECOMECAR.</summary>
+    [HttpPost("me/reset-financial-data")]
+    [ProducesResponseType(typeof(HouseholdDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<HouseholdDto>> ResetFinancialData(
+        [FromBody] ResetHouseholdFinancialDataRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (UserId == null)
+            return Unauthorized();
+
+        try
+        {
+            var dto = await _householdService.ResetFinancialDataAsync(UserId.Value, request.ConfirmPhrase, cancellationToken);
+            return dto == null ? NotFound() : Ok(dto);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
 }

@@ -12,4 +12,9 @@ public interface IHouseholdService
 
     /// <summary>Leave a Couple household: cancels subscriptions, both sides end on Free; leaver gets a new individual household when two members were present.</summary>
     Task LeaveCoupleHouseholdAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task<HouseholdDto?> DismissPartnerLeftNoticeAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes all accounts, transactions, recurring rules, savings objectives and monthly reports for the user's household. Irreversible.</summary>
+    Task<HouseholdDto?> ResetFinancialDataAsync(Guid userId, string confirmPhrase, CancellationToken cancellationToken = default);
 }

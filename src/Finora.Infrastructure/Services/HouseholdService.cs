@@ -164,6 +164,8 @@ public class HouseholdService : IHouseholdService
 
             if (members.Count >= 2)
             {
+                household.PartnerLeftNoticeAtUtc = now;
+
                 var newHousehold = new Household
                 {
                     Id = Guid.NewGuid(),
@@ -190,6 +192,66 @@ public class HouseholdService : IHouseholdService
         }
     }
 
+    public async Task<HouseholdDto?> DismissPartnerLeftNoticeAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await _userRepository.GetByIdTrackedAsync(userId, cancellationToken);
+        if (user?.HouseholdId is not { } householdId)
+            return null;
+
+        var household = await _householdRepository.GetByIdTrackedAsync(householdId, cancellationToken);
+        if (household == null)
+            return null;
+
+        if (household.PartnerLeftNoticeAtUtc == null)
+            return await ToDtoAsync(household, cancellationToken);
+
+        household.PartnerLeftNoticeAtUtc = null;
+        household.UpdatedAt = DateTime.UtcNow;
+        await _householdRepository.SaveChangesAsync(cancellationToken);
+        return await ToDtoAsync(household, cancellationToken);
+    }
+
+    public async Task<HouseholdDto?> ResetFinancialDataAsync(Guid userId, string confirmPhrase, CancellationToken cancellationToken = default)
+    {
+        const string expected = "RECOMECAR";
+        if (!string.Equals(confirmPhrase.Trim(), expected, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Escreve exatamente {expected} para confirmar.");
+
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
+            ?? throw new InvalidOperationException("Utilizador não encontrado.");
+
+        if (user.HouseholdId is not { } householdId)
+            throw new InvalidOperationException("Sem agregado.");
+
+        await using var tx = await _db.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var household = await _db.Households.FirstOrDefaultAsync(h => h.Id == householdId, cancellationToken)
+                ?? throw new InvalidOperationException("Agregado não encontrado.");
+
+            await _db.Transactions.Where(t => t.HouseholdId == householdId).ExecuteDeleteAsync(cancellationToken);
+            await _db.RecurringTransactions.Where(r => r.HouseholdId == householdId).ExecuteDeleteAsync(cancellationToken);
+            await _db.SavingsObjectives.Where(s => s.HouseholdId == householdId).ExecuteDeleteAsync(cancellationToken);
+            await _db.MonthlyReports.Where(m => m.HouseholdId == householdId).ExecuteDeleteAsync(cancellationToken);
+
+            household.PrimaryAccountId = null;
+            household.PartnerLeftNoticeAtUtc = null;
+            household.UpdatedAt = DateTime.UtcNow;
+
+            await _db.Accounts.Where(a => a.HouseholdId == householdId).ExecuteDeleteAsync(cancellationToken);
+
+            await _db.SaveChangesAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+
+            return await ToDtoAsync(household, cancellationToken);
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
     private async Task<HouseholdDto> ToDtoAsync(Domain.Entities.Household household, CancellationToken cancellationToken)
     {
         var plan = await _subscriptionService.GetActivePlanAsync(household.Id, cancellationToken);
@@ -199,7 +261,8 @@ public class HouseholdService : IHouseholdService
             Type = household.Type,
             Name = household.Name,
             CurrentPlan = (plan ?? SubscriptionPlan.Free).ToString(),
-            PrimaryAccountId = household.PrimaryAccountId
+            PrimaryAccountId = household.PrimaryAccountId,
+            PartnerLeftNoticeAtUtc = household.PartnerLeftNoticeAtUtc
         };
     }
 }
