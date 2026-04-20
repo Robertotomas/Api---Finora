@@ -265,6 +265,7 @@ public class HouseholdService : IHouseholdService
     private void DeleteMonthlyReportFiles(IEnumerable<string> relativePaths)
     {
         var uploadsRoot = Path.GetFullPath(Path.Combine(_hostEnvironment.ContentRootPath, "uploads"));
+        var directoriesTouched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var relativePath in relativePaths)
         {
             if (string.IsNullOrWhiteSpace(relativePath))
@@ -279,12 +280,41 @@ public class HouseholdService : IHouseholdService
                 if (!fullPath.StartsWith(uploadsRoot, StringComparison.OrdinalIgnoreCase))
                     continue;
 
+                var dir = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrWhiteSpace(dir))
+                    directoriesTouched.Add(dir);
+
                 if (File.Exists(fullPath))
                     File.Delete(fullPath);
             }
             catch
             {
                 // Best-effort cleanup: DB reset must succeed even if file deletion fails.
+            }
+        }
+
+        DeleteEmptyDirectories(directoriesTouched, uploadsRoot);
+    }
+
+    private static void DeleteEmptyDirectories(HashSet<string> directories, string uploadsRoot)
+    {
+        foreach (var dir in directories.OrderByDescending(d => d.Length))
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+                    continue;
+
+                // Security guard: only delete directories inside uploads root.
+                if (!dir.StartsWith(uploadsRoot, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!Directory.EnumerateFileSystemEntries(dir).Any())
+                    Directory.Delete(dir);
+            }
+            catch
+            {
+                // Best-effort cleanup: ignore failures.
             }
         }
     }
