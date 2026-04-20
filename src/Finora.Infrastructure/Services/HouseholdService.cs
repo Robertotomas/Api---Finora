@@ -4,6 +4,7 @@ using Finora.Domain.Entities;
 using Finora.Domain.Enums;
 using Finora.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 
 namespace Finora.Infrastructure.Services;
 
@@ -14,19 +15,22 @@ public class HouseholdService : IHouseholdService
     private readonly IUserRepository _userRepository;
     private readonly ISubscriptionService _subscriptionService;
     private readonly IAccountRepository _accountRepository;
+    private readonly IHostEnvironment _hostEnvironment;
 
     public HouseholdService(
         ApplicationDbContext db,
         IHouseholdRepository householdRepository,
         IUserRepository userRepository,
         ISubscriptionService subscriptionService,
-        IAccountRepository accountRepository)
+        IAccountRepository accountRepository,
+        IHostEnvironment hostEnvironment)
     {
         _db = db;
         _householdRepository = householdRepository;
         _userRepository = userRepository;
         _subscriptionService = subscriptionService;
         _accountRepository = accountRepository;
+        _hostEnvironment = hostEnvironment;
     }
 
     public async Task<HouseholdDto?> GetByIdAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
@@ -229,6 +233,11 @@ public class HouseholdService : IHouseholdService
             var household = await _db.Households.FirstOrDefaultAsync(h => h.Id == householdId, cancellationToken)
                 ?? throw new InvalidOperationException("Agregado não encontrado.");
 
+            var reportRelativePaths = await _db.MonthlyReports
+                .Where(m => m.HouseholdId == householdId)
+                .Select(m => m.FileRelativePath)
+                .ToListAsync(cancellationToken);
+
             await _db.Transactions.Where(t => t.HouseholdId == householdId).ExecuteDeleteAsync(cancellationToken);
             await _db.RecurringTransactions.Where(r => r.HouseholdId == householdId).ExecuteDeleteAsync(cancellationToken);
             await _db.SavingsObjectives.Where(s => s.HouseholdId == householdId).ExecuteDeleteAsync(cancellationToken);
@@ -243,12 +252,40 @@ public class HouseholdService : IHouseholdService
             await _db.SaveChangesAsync(cancellationToken);
             await tx.CommitAsync(cancellationToken);
 
+            DeleteMonthlyReportFiles(reportRelativePaths);
             return await ToDtoAsync(household, cancellationToken);
         }
         catch
         {
             await tx.RollbackAsync(cancellationToken);
             throw;
+        }
+    }
+
+    private void DeleteMonthlyReportFiles(IEnumerable<string> relativePaths)
+    {
+        var uploadsRoot = Path.GetFullPath(Path.Combine(_hostEnvironment.ContentRootPath, "uploads"));
+        foreach (var relativePath in relativePaths)
+        {
+            if (string.IsNullOrWhiteSpace(relativePath))
+                continue;
+
+            try
+            {
+                var normalized = relativePath.Replace('/', Path.DirectorySeparatorChar);
+                var fullPath = Path.GetFullPath(Path.Combine(uploadsRoot, normalized));
+
+                // Security guard: only delete files inside uploads root.
+                if (!fullPath.StartsWith(uploadsRoot, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (File.Exists(fullPath))
+                    File.Delete(fullPath);
+            }
+            catch
+            {
+                // Best-effort cleanup: DB reset must succeed even if file deletion fails.
+            }
         }
     }
 
