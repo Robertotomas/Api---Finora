@@ -46,8 +46,10 @@ public class RecurringTransactionService : IRecurringTransactionService
             return (0, 0);
 
         var active = await _repository.GetActiveForMonthAsync(householdId, year, month, cancellationToken);
-        var income = active.Where(r => r.Type == Domain.Enums.TransactionType.Income).Sum(r => r.Amount);
-        var expenses = active.Where(r => r.Type == Domain.Enums.TransactionType.Expense).Sum(r => r.Amount);
+        var income = active.Where(r => r.Type == Domain.Enums.TransactionType.Income)
+            .Sum(r => r.Frequency == Domain.Enums.RecurringFrequency.Annual ? Math.Round(r.Amount / 12m, 2) : r.Amount);
+        var expenses = active.Where(r => r.Type == Domain.Enums.TransactionType.Expense)
+            .Sum(r => r.Frequency == Domain.Enums.RecurringFrequency.Annual ? Math.Round(r.Amount / 12m, 2) : r.Amount);
         return (income, expenses);
     }
 
@@ -115,6 +117,8 @@ public class RecurringTransactionService : IRecurringTransactionService
                 return null;
         }
 
+        var frequency = (Domain.Enums.RecurringFrequency)request.Frequency;
+
         var entity = new RecurringTransaction
         {
             Id = Guid.NewGuid(),
@@ -125,7 +129,9 @@ public class RecurringTransactionService : IRecurringTransactionService
             Amount = request.Amount,
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
             DestinationAccountId = request.Type == Domain.Enums.TransactionType.Transfer ? request.DestinationAccountId : null,
-            StartMonth = now.Month,
+            Frequency = frequency,
+            AnnualMonth = null,
+            StartMonth = frequency == Domain.Enums.RecurringFrequency.Annual ? 1 : now.Month,
             StartYear = now.Year,
             EndMonth = null,
             EndYear = null,
@@ -148,12 +154,16 @@ public class RecurringTransactionService : IRecurringTransactionService
         if (account == null || account.HouseholdId != entity.HouseholdId)
             return null;
 
+        var frequency = (Domain.Enums.RecurringFrequency)request.Frequency;
+
         entity.AccountId = request.AccountId;
         entity.Type = request.Type;
         entity.Category = request.Type == Domain.Enums.TransactionType.Transfer ? Domain.Enums.TransactionCategory.Transfer : request.Category;
         entity.Amount = request.Amount;
         entity.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
         entity.DestinationAccountId = request.Type == Domain.Enums.TransactionType.Transfer ? request.DestinationAccountId : null;
+        entity.Frequency = frequency;
+        entity.AnnualMonth = null;
         entity.UpdatedAt = DateTime.UtcNow;
 
         await _repository.UpdateAsync(entity, cancellationToken);
@@ -194,6 +204,8 @@ public class RecurringTransactionService : IRecurringTransactionService
             Amount = r.Amount,
             Description = r.Description,
             DestinationAccountId = r.DestinationAccountId,
+            Frequency = (int)r.Frequency,
+            AnnualMonth = r.AnnualMonth,
             StartMonth = r.StartMonth,
             StartYear = r.StartYear,
             EndMonth = r.EndMonth,

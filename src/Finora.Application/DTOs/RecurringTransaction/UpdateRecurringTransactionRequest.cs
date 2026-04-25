@@ -20,4 +20,7 @@ public record UpdateRecurringTransactionRequest
     public string? Description { get; init; }
 
     public Guid? DestinationAccountId { get; init; }
+
+    public int Frequency { get; init; }
+    public int? AnnualMonth { get; init; }
 }

@@ -102,16 +102,20 @@ public class RecurringAccountBalanceService : IRecurringAccountBalanceService
                     if (!IsActiveInMonth(r, y, mo))
                         continue;
 
+                    var amount = r.Frequency == RecurringFrequency.Annual
+                        ? Math.Round(r.Amount / 12m, 2)
+                        : r.Amount;
+
                     if (r.Type == TransactionType.Transfer)
                     {
                         if (r.AccountId == accountId)
-                            sum -= r.Amount;
+                            sum -= amount;
                         if (r.DestinationAccountId == accountId)
-                            sum += r.Amount;
+                            sum += amount;
                     }
                     else if (r.AccountId == accountId)
                     {
-                        sum += r.Type == TransactionType.Income ? r.Amount : -r.Amount;
+                        sum += r.Type == TransactionType.Income ? amount : -amount;
                     }
                 }
 

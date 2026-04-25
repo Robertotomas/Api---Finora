@@ -20,4 +20,9 @@ public record CreateRecurringTransactionRequest
     public string? Description { get; init; }
 
     public Guid? DestinationAccountId { get; init; }
+
+    /// <summary>0 = Monthly, 1 = Annual. Defaults to Monthly.</summary>
+    public int Frequency { get; init; }
+    /// <summary>For Annual: the month (1-12) when payment occurs.</summary>
+    public int? AnnualMonth { get; init; }
 }

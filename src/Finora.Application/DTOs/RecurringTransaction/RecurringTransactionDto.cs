@@ -12,6 +12,8 @@ public record RecurringTransactionDto
     public decimal Amount { get; init; }
     public string? Description { get; init; }
     public Guid? DestinationAccountId { get; init; }
+    public int Frequency { get; init; }
+    public int? AnnualMonth { get; init; }
     public int StartMonth { get; init; }
     public int StartYear { get; init; }
     public int? EndMonth { get; init; }

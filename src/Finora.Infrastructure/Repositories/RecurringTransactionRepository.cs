@@ -66,13 +66,13 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
                 .Where(r => (r.StartYear < y || (r.StartYear == y && r.StartMonth <= m))
                     && (r.EndYear == null || r.EndYear > y || (r.EndYear == y && r.EndMonth > m))
                     && r.Type == TransactionType.Income)
-                .Sum(r => r.Amount);
+                .Sum(r => r.Frequency == RecurringFrequency.Annual ? Math.Round(r.Amount / 12m, 2) : r.Amount);
 
             var expenses = recurring
                 .Where(r => (r.StartYear < y || (r.StartYear == y && r.StartMonth <= m))
                     && (r.EndYear == null || r.EndYear > y || (r.EndYear == y && r.EndMonth > m))
                     && r.Type == TransactionType.Expense)
-                .Sum(r => r.Amount);
+                .Sum(r => r.Frequency == RecurringFrequency.Annual ? Math.Round(r.Amount / 12m, 2) : r.Amount);
 
             result.Add((y, m, income, expenses));
 
@@ -90,7 +90,7 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
         return active
             .Where(r => r.Type == TransactionType.Expense)
             .GroupBy(r => (int)r.Category)
-            .Select(g => ((int)g.Key, g.Sum(r => r.Amount)))
+            .Select(g => ((int)g.Key, g.Sum(r => r.Frequency == RecurringFrequency.Annual ? Math.Round(r.Amount / 12m, 2) : r.Amount)))
             .OrderByDescending(x => x.Item2)
             .ToList();
     }
@@ -102,7 +102,7 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
         return active
             .Where(r => r.Type == TransactionType.Income)
             .GroupBy(r => (int)r.Category)
-            .Select(g => ((int)g.Key, g.Sum(r => r.Amount)))
+            .Select(g => ((int)g.Key, g.Sum(r => r.Frequency == RecurringFrequency.Annual ? Math.Round(r.Amount / 12m, 2) : r.Amount)))
             .OrderByDescending(x => x.Item2)
             .ToList();
     }
@@ -155,17 +155,21 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
                 if (!active)
                     continue;
 
+                var amount = r.Frequency == RecurringFrequency.Annual
+                    ? Math.Round(r.Amount / 12m, 2)
+                    : r.Amount;
+
                 if (r.Type == TransactionType.Income)
                 {
-                    totalIncome += r.Amount;
+                    totalIncome += amount;
                     var c = (int)r.Category;
-                    incomeDict[c] = incomeDict.GetValueOrDefault(c) + r.Amount;
+                    incomeDict[c] = incomeDict.GetValueOrDefault(c) + amount;
                 }
                 else
                 {
-                    totalExpenses += r.Amount;
+                    totalExpenses += amount;
                     var c = (int)r.Category;
-                    expenseDict[c] = expenseDict.GetValueOrDefault(c) + r.Amount;
+                    expenseDict[c] = expenseDict.GetValueOrDefault(c) + amount;
                 }
             }
 

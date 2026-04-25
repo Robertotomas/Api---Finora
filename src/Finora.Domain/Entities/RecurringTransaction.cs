@@ -19,6 +19,11 @@ public class RecurringTransaction : BaseEntity
     public Guid? DestinationAccountId { get; set; }
     public Account? DestinationAccount { get; set; }
 
+    /// <summary>Monthly or Annual.</summary>
+    public RecurringFrequency Frequency { get; set; } = RecurringFrequency.Monthly;
+    /// <summary>For Annual frequency: the month (1-12) when the payment actually occurs.</summary>
+    public int? AnnualMonth { get; set; }
+
     /// <summary>First month (1-12) when this recurring applies.</summary>
     public int StartMonth { get; set; }
     /// <summary>First year when this recurring applies.</summary>
