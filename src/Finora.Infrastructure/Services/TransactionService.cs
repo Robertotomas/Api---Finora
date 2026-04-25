@@ -50,6 +50,19 @@ public class TransactionService : ITransactionService
         if (account == null || account.HouseholdId != householdId)
             return null;
 
+        // Transfer validation
+        Account? destinationAccount = null;
+        if (request.Type == TransactionType.Transfer)
+        {
+            if (!request.DestinationAccountId.HasValue)
+                return null;
+            if (request.DestinationAccountId.Value == request.AccountId)
+                return null;
+            destinationAccount = await _accountRepository.GetByIdAsync(request.DestinationAccountId.Value, cancellationToken);
+            if (destinationAccount == null || destinationAccount.HouseholdId != householdId)
+                return null;
+        }
+
         var splitData = await ResolveSplitsAsync(request.Splits, userId, householdId, cancellationToken);
         if (splitData == null)
             return null;
@@ -60,10 +73,11 @@ public class TransactionService : ITransactionService
             AccountId = request.AccountId,
             HouseholdId = householdId,
             Type = request.Type,
-            Category = request.Category,
+            Category = request.Type == TransactionType.Transfer ? TransactionCategory.Transfer : request.Category,
             Amount = request.Amount,
             Date = request.Date.Kind == DateTimeKind.Utc ? request.Date : DateTime.SpecifyKind(request.Date, DateTimeKind.Utc),
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
+            DestinationAccountId = request.Type == TransactionType.Transfer ? request.DestinationAccountId : null,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -72,10 +86,20 @@ public class TransactionService : ITransactionService
 
         await _transactionRepository.CreateAsync(transaction, cancellationToken);
 
-        account.Balance = request.Type == TransactionType.Income
-            ? account.Balance + request.Amount
-            : account.Balance - request.Amount;
-        await _accountRepository.UpdateAsync(account, cancellationToken);
+        if (request.Type == TransactionType.Transfer)
+        {
+            account.Balance -= request.Amount;
+            await _accountRepository.UpdateAsync(account, cancellationToken);
+            destinationAccount!.Balance += request.Amount;
+            await _accountRepository.UpdateAsync(destinationAccount, cancellationToken);
+        }
+        else
+        {
+            account.Balance = request.Type == TransactionType.Income
+                ? account.Balance + request.Amount
+                : account.Balance - request.Amount;
+            await _accountRepository.UpdateAsync(account, cancellationToken);
+        }
 
         return ToDto(transaction);
     }
@@ -92,6 +116,19 @@ public class TransactionService : ITransactionService
         if (account == null || account.HouseholdId != transaction.HouseholdId)
             return null;
 
+        // Transfer validation for new values
+        Account? newDestAccount = null;
+        if (request.Type == TransactionType.Transfer)
+        {
+            if (!request.DestinationAccountId.HasValue)
+                return null;
+            if (request.DestinationAccountId.Value == request.AccountId)
+                return null;
+            newDestAccount = await _accountRepository.GetByIdAsync(request.DestinationAccountId.Value, cancellationToken);
+            if (newDestAccount == null || newDestAccount.HouseholdId != transaction.HouseholdId)
+                return null;
+        }
+
         var splitData = await ResolveSplitsAsync(request.Splits, userId, transaction.HouseholdId, cancellationToken);
         if (splitData == null)
             return null;
@@ -99,13 +136,15 @@ public class TransactionService : ITransactionService
         var oldAccountId = transaction.AccountId;
         var oldType = transaction.Type;
         var oldAmount = transaction.Amount;
+        var oldDestAccountId = transaction.DestinationAccountId;
 
         transaction.AccountId = request.AccountId;
         transaction.Type = request.Type;
-        transaction.Category = request.Category;
+        transaction.Category = request.Type == TransactionType.Transfer ? TransactionCategory.Transfer : request.Category;
         transaction.Amount = request.Amount;
         transaction.Date = request.Date.Kind == DateTimeKind.Utc ? request.Date : DateTime.SpecifyKind(request.Date, DateTimeKind.Utc);
         transaction.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+        transaction.DestinationAccountId = request.Type == TransactionType.Transfer ? request.DestinationAccountId : null;
         transaction.UpdatedAt = DateTime.UtcNow;
 
         transaction.Splits.Clear();
@@ -114,27 +153,12 @@ public class TransactionService : ITransactionService
 
         await _transactionRepository.UpdateAsync(transaction, cancellationToken);
 
-        if (oldAccountId != request.AccountId)
-        {
-            var oldAccount = await _accountRepository.GetByIdAsync(oldAccountId, cancellationToken);
-            if (oldAccount != null)
-            {
-                oldAccount.Balance = oldType == TransactionType.Income
-                    ? oldAccount.Balance - oldAmount
-                    : oldAccount.Balance + oldAmount;
-                await _accountRepository.UpdateAsync(oldAccount, cancellationToken);
-            }
-            account.Balance = request.Type == TransactionType.Income
-                ? account.Balance + request.Amount
-                : account.Balance - request.Amount;
-            await _accountRepository.UpdateAsync(account, cancellationToken);
-        }
-        else
-        {
-            account.Balance += request.Type == TransactionType.Income ? request.Amount : -request.Amount;
-            account.Balance -= oldType == TransactionType.Income ? oldAmount : -oldAmount;
-            await _accountRepository.UpdateAsync(account, cancellationToken);
-        }
+        // Revert old balance effects
+        await RevertBalanceEffects(oldAccountId, oldType, oldAmount, oldDestAccountId, cancellationToken);
+
+        // Apply new balance effects
+        await ApplyBalanceEffects(request.AccountId, request.Type, request.Amount,
+            request.Type == TransactionType.Transfer ? request.DestinationAccountId : null, cancellationToken);
 
         return ToDto(transaction);
     }
@@ -147,17 +171,62 @@ public class TransactionService : ITransactionService
         if (!await UserBelongsToHouseholdAsync(userId, transaction.HouseholdId, cancellationToken))
             return false;
 
-        var account = await _accountRepository.GetByIdAsync(transaction.AccountId, cancellationToken);
-        if (account != null)
-        {
-            account.Balance = transaction.Type == TransactionType.Income
-                ? account.Balance - transaction.Amount
-                : account.Balance + transaction.Amount;
-            await _accountRepository.UpdateAsync(account, cancellationToken);
-        }
+        // Revert balance effects
+        await RevertBalanceEffects(transaction.AccountId, transaction.Type, transaction.Amount,
+            transaction.DestinationAccountId, cancellationToken);
 
         await _transactionRepository.DeleteAsync(transaction, cancellationToken);
         return true;
+    }
+
+    private async Task RevertBalanceEffects(Guid accountId, TransactionType type, decimal amount, Guid? destAccountId, CancellationToken cancellationToken)
+    {
+        var sourceAccount = await _accountRepository.GetByIdAsync(accountId, cancellationToken);
+        if (sourceAccount != null)
+        {
+            if (type == TransactionType.Transfer)
+                sourceAccount.Balance += amount;
+            else if (type == TransactionType.Income)
+                sourceAccount.Balance -= amount;
+            else
+                sourceAccount.Balance += amount;
+            await _accountRepository.UpdateAsync(sourceAccount, cancellationToken);
+        }
+
+        if (type == TransactionType.Transfer && destAccountId.HasValue)
+        {
+            var destAccount = await _accountRepository.GetByIdAsync(destAccountId.Value, cancellationToken);
+            if (destAccount != null)
+            {
+                destAccount.Balance -= amount;
+                await _accountRepository.UpdateAsync(destAccount, cancellationToken);
+            }
+        }
+    }
+
+    private async Task ApplyBalanceEffects(Guid accountId, TransactionType type, decimal amount, Guid? destAccountId, CancellationToken cancellationToken)
+    {
+        var sourceAccount = await _accountRepository.GetByIdAsync(accountId, cancellationToken);
+        if (sourceAccount != null)
+        {
+            if (type == TransactionType.Transfer)
+                sourceAccount.Balance -= amount;
+            else if (type == TransactionType.Income)
+                sourceAccount.Balance += amount;
+            else
+                sourceAccount.Balance -= amount;
+            await _accountRepository.UpdateAsync(sourceAccount, cancellationToken);
+        }
+
+        if (type == TransactionType.Transfer && destAccountId.HasValue)
+        {
+            var destAccount = await _accountRepository.GetByIdAsync(destAccountId.Value, cancellationToken);
+            if (destAccount != null)
+            {
+                destAccount.Balance += amount;
+                await _accountRepository.UpdateAsync(destAccount, cancellationToken);
+            }
+        }
     }
 
     private async Task<bool> UserBelongsToHouseholdAsync(Guid userId, Guid householdId, CancellationToken cancellationToken)
@@ -201,6 +270,7 @@ public class TransactionService : ITransactionService
             Amount = t.Amount,
             Date = t.Date,
             Description = t.Description,
+            DestinationAccountId = t.DestinationAccountId,
             Splits = t.Splits.Select(s => new TransactionSplitDto { UserId = s.UserId, Percentage = s.Percentage }).ToList()
         };
     }

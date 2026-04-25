@@ -22,6 +22,8 @@ public record CreateTransactionRequest
     [MaxLength(500)]
     public string? Description { get; init; }
 
+    public Guid? DestinationAccountId { get; init; }
+
     /// <summary>
     /// Splits for couples. Percentages must sum to 100. For individuals, omit or use single 100% for current user.
     /// </summary>

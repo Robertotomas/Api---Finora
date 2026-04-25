@@ -18,7 +18,7 @@ public class DashboardRepository : IDashboardRepository
     {
         return await _context.Accounts
             .AsNoTracking()
-            .Where(a => a.HouseholdId == householdId)
+            .Where(a => a.HouseholdId == householdId && !a.IsArchived)
             .SumAsync(a => a.Balance, cancellationToken);
     }
 
@@ -244,7 +244,7 @@ public class DashboardRepository : IDashboardRepository
     {
         var accounts = await _context.Accounts
             .AsNoTracking()
-            .Where(a => a.HouseholdId == householdId)
+            .Where(a => a.HouseholdId == householdId && !a.IsArchived)
             .Select(a => new { a.Id, a.Name, a.Type, a.Currency, a.Balance })
             .ToListAsync(cancellationToken);
 

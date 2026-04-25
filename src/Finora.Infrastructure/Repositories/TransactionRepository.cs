@@ -37,7 +37,7 @@ public class TransactionRepository : ITransactionRepository
             .Where(t => t.HouseholdId == householdId);
 
         if (accountId.HasValue)
-            query = query.Where(t => t.AccountId == accountId.Value);
+            query = query.Where(t => t.AccountId == accountId.Value || t.DestinationAccountId == accountId.Value);
 
         if (from.HasValue)
             query = query.Where(t => t.Date >= from.Value);
@@ -87,6 +87,23 @@ public class TransactionRepository : ITransactionRepository
     {
         return await _context.Transactions
             .AsNoTracking()
-            .CountAsync(t => t.AccountId == accountId, cancellationToken);
+            .CountAsync(t => t.AccountId == accountId || t.DestinationAccountId == accountId, cancellationToken);
+    }
+
+    public async Task ReassignAccountAsync(Guid fromAccountId, Guid toAccountId, CancellationToken cancellationToken = default)
+    {
+        var transactions = await _context.Transactions
+            .Where(t => t.AccountId == fromAccountId || t.DestinationAccountId == fromAccountId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var t in transactions)
+        {
+            if (t.AccountId == fromAccountId)
+                t.AccountId = toAccountId;
+            if (t.DestinationAccountId == fromAccountId)
+                t.DestinationAccountId = toAccountId;
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
     }
 }

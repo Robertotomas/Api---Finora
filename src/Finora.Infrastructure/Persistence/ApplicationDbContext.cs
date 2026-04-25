@@ -84,6 +84,12 @@ public class ApplicationDbContext : DbContext
                 .HasForeignKey(e => e.AccountId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            entity.HasOne(e => e.DestinationAccount)
+                .WithMany()
+                .HasForeignKey(e => e.DestinationAccountId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired(false);
+
             entity.HasOne(e => e.Household)
                 .WithMany(h => h.Transactions)
                 .HasForeignKey(e => e.HouseholdId)
@@ -118,6 +124,12 @@ public class ApplicationDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.AccountId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.DestinationAccount)
+                .WithMany()
+                .HasForeignKey(e => e.DestinationAccountId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired(false);
 
             entity.HasOne(e => e.Household)
                 .WithMany()

@@ -18,4 +18,6 @@ public record CreateRecurringTransactionRequest
 
     [MaxLength(500)]
     public string? Description { get; init; }
+
+    public Guid? DestinationAccountId { get; init; }
 }

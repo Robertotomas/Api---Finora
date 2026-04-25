@@ -138,9 +138,108 @@ public class AccountService : IAccountService
         return true;
     }
 
+    public async Task<AccountDto?> ArchiveAsync(Guid id, Guid userId, Guid? targetAccountId = null, CancellationToken cancellationToken = default)
+    {
+        var account = await _accountRepository.GetByIdAsync(id, cancellationToken);
+        if (account == null) return null;
+
+        if (!await UserBelongsToHouseholdAsync(userId, account.HouseholdId, cancellationToken))
+            return null;
+
+        // If account has balance, must transfer to another account first
+        if (account.Balance != 0)
+        {
+            if (!targetAccountId.HasValue)
+                throw new InvalidOperationException("Esta conta tem saldo. Escolhe uma conta de destino para transferir o saldo antes de arquivar.");
+
+            if (targetAccountId.Value == id)
+                throw new InvalidOperationException("A conta de destino não pode ser igual à conta de origem.");
+
+            var targetAccount = await _accountRepository.GetByIdAsync(targetAccountId.Value, cancellationToken);
+            if (targetAccount == null || targetAccount.HouseholdId != account.HouseholdId)
+                throw new InvalidOperationException("A conta de destino não foi encontrada ou não pertence ao mesmo household.");
+
+            if (targetAccount.IsArchived)
+                throw new InvalidOperationException("Não é possível transferir para uma conta arquivada.");
+
+            targetAccount.Balance += account.Balance;
+            account.Balance = 0;
+            await _accountRepository.UpdateAsync(targetAccount, cancellationToken);
+        }
+
+        account.IsArchived = true;
+        account.ArchivedAt = DateTime.UtcNow;
+        account.UpdatedAt = DateTime.UtcNow;
+
+        await _accountRepository.UpdateAsync(account, cancellationToken);
+        await ApplyHouseholdPrimaryRulesAsync(account.HouseholdId, cancellationToken);
+
+        var state = await _subscriptionService.GetFreeMultiAccountStateAsync(account.HouseholdId, cancellationToken);
+        var now = DateTime.UtcNow;
+        var recurringNet = await _recurringAccountBalanceService.GetCumulativeRecurringNetThroughMonthAsync(
+            account.HouseholdId, now.Year, now.Month, cancellationToken);
+        return ToDto(account, recurringNet.GetValueOrDefault(account.Id), state);
+    }
+
+    public async Task<AccountDto?> ReactivateAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
+    {
+        var account = await _accountRepository.GetByIdAsync(id, cancellationToken);
+        if (account == null) return null;
+
+        if (!await UserBelongsToHouseholdAsync(userId, account.HouseholdId, cancellationToken))
+            return null;
+
+        account.IsArchived = false;
+        account.ArchivedAt = null;
+        account.UpdatedAt = DateTime.UtcNow;
+
+        await _accountRepository.UpdateAsync(account, cancellationToken);
+        await ApplyHouseholdPrimaryRulesAsync(account.HouseholdId, cancellationToken);
+
+        var state = await _subscriptionService.GetFreeMultiAccountStateAsync(account.HouseholdId, cancellationToken);
+        var now = DateTime.UtcNow;
+        var recurringNet = await _recurringAccountBalanceService.GetCumulativeRecurringNetThroughMonthAsync(
+            account.HouseholdId, now.Year, now.Month, cancellationToken);
+        return ToDto(account, recurringNet.GetValueOrDefault(account.Id), state);
+    }
+
+    public async Task<bool> DeleteWithTransferAsync(Guid id, Guid targetAccountId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        var account = await _accountRepository.GetByIdAsync(id, cancellationToken);
+        if (account == null) return false;
+
+        if (!await UserBelongsToHouseholdAsync(userId, account.HouseholdId, cancellationToken))
+            return false;
+
+        if (id == targetAccountId)
+            throw new InvalidOperationException("A conta de destino não pode ser igual à conta de origem.");
+
+        var targetAccount = await _accountRepository.GetByIdAsync(targetAccountId, cancellationToken);
+        if (targetAccount == null || targetAccount.HouseholdId != account.HouseholdId)
+            throw new InvalidOperationException("A conta de destino não foi encontrada ou não pertence ao mesmo household.");
+
+        if (targetAccount.IsArchived)
+            throw new InvalidOperationException("Não é possível transferir para uma conta arquivada.");
+
+        // Reassign all transactions and recurring transactions
+        await _transactionRepository.ReassignAccountAsync(id, targetAccountId, cancellationToken);
+        await _recurringTransactionRepository.ReassignAccountAsync(id, targetAccountId, cancellationToken);
+
+        // Transfer balance
+        targetAccount.Balance += account.Balance;
+        await _accountRepository.UpdateAsync(targetAccount, cancellationToken);
+
+        // Delete source account
+        var householdId = account.HouseholdId;
+        await _accountRepository.DeleteAsync(account, cancellationToken);
+        await ApplyHouseholdPrimaryRulesAsync(householdId, cancellationToken);
+        return true;
+    }
+
     private async Task ApplyHouseholdPrimaryRulesAsync(Guid householdId, CancellationToken cancellationToken)
     {
-        var accounts = await _accountRepository.GetByHouseholdIdAsync(householdId, cancellationToken);
+        var allAccounts = await _accountRepository.GetByHouseholdIdAsync(householdId, cancellationToken);
+        var accounts = allAccounts.Where(a => !a.IsArchived).ToList();
         var household = await _householdRepository.GetByIdTrackedAsync(householdId, cancellationToken);
         if (household == null)
             return;
@@ -195,7 +294,9 @@ public class AccountService : IAccountService
             Balance = account.Balance + recurringNetThroughCurrentMonth,
             Currency = account.Currency,
             HouseholdId = account.HouseholdId,
-            IsActiveForPlan = isActiveForPlan
+            IsActiveForPlan = isActiveForPlan,
+            IsArchived = account.IsArchived,
+            ArchivedAt = account.ArchivedAt
         };
     }
 

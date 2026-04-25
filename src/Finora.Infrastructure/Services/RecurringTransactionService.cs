@@ -103,15 +103,28 @@ public class RecurringTransactionService : IRecurringTransactionService
 
         var now = DateTime.UtcNow;
 
+        // Transfer validation
+        if (request.Type == Domain.Enums.TransactionType.Transfer)
+        {
+            if (!request.DestinationAccountId.HasValue)
+                return null;
+            if (request.DestinationAccountId.Value == request.AccountId)
+                return null;
+            var destAccount = await _accountRepository.GetByIdAsync(request.DestinationAccountId.Value, cancellationToken);
+            if (destAccount == null || destAccount.HouseholdId != householdId)
+                return null;
+        }
+
         var entity = new RecurringTransaction
         {
             Id = Guid.NewGuid(),
             AccountId = request.AccountId,
             HouseholdId = householdId,
             Type = request.Type,
-            Category = request.Category,
+            Category = request.Type == Domain.Enums.TransactionType.Transfer ? Domain.Enums.TransactionCategory.Transfer : request.Category,
             Amount = request.Amount,
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
+            DestinationAccountId = request.Type == Domain.Enums.TransactionType.Transfer ? request.DestinationAccountId : null,
             StartMonth = now.Month,
             StartYear = now.Year,
             EndMonth = null,
@@ -137,9 +150,10 @@ public class RecurringTransactionService : IRecurringTransactionService
 
         entity.AccountId = request.AccountId;
         entity.Type = request.Type;
-        entity.Category = request.Category;
+        entity.Category = request.Type == Domain.Enums.TransactionType.Transfer ? Domain.Enums.TransactionCategory.Transfer : request.Category;
         entity.Amount = request.Amount;
         entity.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+        entity.DestinationAccountId = request.Type == Domain.Enums.TransactionType.Transfer ? request.DestinationAccountId : null;
         entity.UpdatedAt = DateTime.UtcNow;
 
         await _repository.UpdateAsync(entity, cancellationToken);
@@ -179,6 +193,7 @@ public class RecurringTransactionService : IRecurringTransactionService
             Category = r.Category,
             Amount = r.Amount,
             Description = r.Description,
+            DestinationAccountId = r.DestinationAccountId,
             StartMonth = r.StartMonth,
             StartYear = r.StartYear,
             EndMonth = r.EndMonth,

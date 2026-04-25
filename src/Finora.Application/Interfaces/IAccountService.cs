@@ -9,4 +9,7 @@ public interface IAccountService
     Task<AccountDto?> CreateAsync(CreateAccountRequest request, Guid householdId, Guid userId, CancellationToken cancellationToken = default);
     Task<AccountDto?> UpdateAsync(Guid id, UpdateAccountRequest request, Guid userId, CancellationToken cancellationToken = default);
     Task<bool> DeleteAsync(Guid id, Guid userId, CancellationToken cancellationToken = default);
+    Task<AccountDto?> ArchiveAsync(Guid id, Guid userId, Guid? targetAccountId = null, CancellationToken cancellationToken = default);
+    Task<AccountDto?> ReactivateAsync(Guid id, Guid userId, CancellationToken cancellationToken = default);
+    Task<bool> DeleteWithTransferAsync(Guid id, Guid targetAccountId, Guid userId, CancellationToken cancellationToken = default);
 }

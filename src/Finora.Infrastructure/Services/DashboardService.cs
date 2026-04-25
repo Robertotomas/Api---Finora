@@ -366,6 +366,7 @@ public class DashboardService : IDashboardService
         TransactionCategory.Entertainment => "Entretenimento",
         TransactionCategory.Shopping => "Compras",
         TransactionCategory.Education => "Educação",
+        TransactionCategory.Transfer => "Transferência",
         _ => "Outro"
     };
 

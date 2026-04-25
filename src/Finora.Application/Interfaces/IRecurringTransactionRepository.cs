@@ -19,4 +19,5 @@ public interface IRecurringTransactionRepository
     Task<RecurringTransaction> CreateAsync(RecurringTransaction entity, CancellationToken cancellationToken = default);
     Task<RecurringTransaction> UpdateAsync(RecurringTransaction entity, CancellationToken cancellationToken = default);
     Task<int> CountByAccountIdAsync(Guid accountId, CancellationToken cancellationToken = default);
+    Task ReassignAccountAsync(Guid fromAccountId, Guid toAccountId, CancellationToken cancellationToken = default);
 }

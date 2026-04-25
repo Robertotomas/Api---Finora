@@ -17,5 +17,8 @@ public class Transaction : BaseEntity
     public DateTime Date { get; set; }
     public string? Description { get; set; }
 
+    public Guid? DestinationAccountId { get; set; }
+    public Account? DestinationAccount { get; set; }
+
     public ICollection<TransactionSplit> Splits { get; set; } = new List<TransactionSplit>();
 }

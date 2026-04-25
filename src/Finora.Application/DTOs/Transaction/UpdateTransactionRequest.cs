@@ -22,5 +22,7 @@ public record UpdateTransactionRequest
     [MaxLength(500)]
     public string? Description { get; init; }
 
+    public Guid? DestinationAccountId { get; init; }
+
     public IReadOnlyList<TransactionSplitInput>? Splits { get; init; }
 }

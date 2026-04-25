@@ -9,6 +9,8 @@ public class Account : BaseEntity
     public AccountType Type { get; set; }
     public decimal Balance { get; set; }
     public string Currency { get; set; } = "EUR";
+    public bool IsArchived { get; set; } = false;
+    public DateTime? ArchivedAt { get; set; }
 
     public Guid HouseholdId { get; set; }
     public Household Household { get; set; } = null!;

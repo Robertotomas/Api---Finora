@@ -17,6 +17,8 @@ public enum TransactionCategory
     Entertainment = 15,
     Shopping = 16,
     Education = 17,
+    // Transfer
+    Transfer = 100,
     // Shared
     Other = 99
 }

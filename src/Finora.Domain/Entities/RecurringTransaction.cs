@@ -16,6 +16,9 @@ public class RecurringTransaction : BaseEntity
     public decimal Amount { get; set; }
     public string? Description { get; set; }
 
+    public Guid? DestinationAccountId { get; set; }
+    public Account? DestinationAccount { get; set; }
+
     /// <summary>First month (1-12) when this recurring applies.</summary>
     public int StartMonth { get; set; }
     /// <summary>First year when this recurring applies.</summary>

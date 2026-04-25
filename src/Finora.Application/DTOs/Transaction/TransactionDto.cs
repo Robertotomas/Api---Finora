@@ -12,5 +12,6 @@ public record TransactionDto
     public decimal Amount { get; init; }
     public DateTime Date { get; init; }
     public string? Description { get; init; }
+    public Guid? DestinationAccountId { get; init; }
     public IReadOnlyList<TransactionSplitDto> Splits { get; init; } = Array.Empty<TransactionSplitDto>();
 }

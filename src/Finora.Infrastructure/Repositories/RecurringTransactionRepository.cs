@@ -202,6 +202,23 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
     {
         return await _context.RecurringTransactions
             .AsNoTracking()
-            .CountAsync(r => r.AccountId == accountId, cancellationToken);
+            .CountAsync(r => r.AccountId == accountId || r.DestinationAccountId == accountId, cancellationToken);
+    }
+
+    public async Task ReassignAccountAsync(Guid fromAccountId, Guid toAccountId, CancellationToken cancellationToken = default)
+    {
+        var recurring = await _context.RecurringTransactions
+            .Where(r => r.AccountId == fromAccountId || r.DestinationAccountId == fromAccountId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var r in recurring)
+        {
+            if (r.AccountId == fromAccountId)
+                r.AccountId = toAccountId;
+            if (r.DestinationAccountId == fromAccountId)
+                r.DestinationAccountId = toAccountId;
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
     }
 }

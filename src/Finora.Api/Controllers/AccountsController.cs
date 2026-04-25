@@ -154,4 +154,65 @@ public class AccountsController : ControllerBase
             return BadRequest(new { code = "ACCOUNT_HAS_MOVEMENTS", message = ex.Message });
         }
     }
+
+    /// <summary>
+    /// Archive an account. If the account has a balance, a targetAccountId must be provided to transfer the balance.
+    /// </summary>
+    [HttpPost("{id:guid}/archive")]
+    [ProducesResponseType(typeof(AccountDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AccountDto>> Archive(Guid id, [FromBody] ArchiveAccountRequest? request, CancellationToken cancellationToken)
+    {
+        if (UserId == null)
+            return NotFound();
+
+        try
+        {
+            var account = await _accountService.ArchiveAsync(id, UserId.Value, request?.TargetAccountId, cancellationToken);
+            return account == null ? NotFound() : Ok(account);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { code = "ARCHIVE_ERROR", message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Reactivate an archived account.
+    /// </summary>
+    [HttpPost("{id:guid}/reactivate")]
+    [ProducesResponseType(typeof(AccountDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AccountDto>> Reactivate(Guid id, CancellationToken cancellationToken)
+    {
+        if (UserId == null)
+            return NotFound();
+
+        var account = await _accountService.ReactivateAsync(id, UserId.Value, cancellationToken);
+        return account == null ? NotFound() : Ok(account);
+    }
+
+    /// <summary>
+    /// Delete an account by transferring all transactions and balance to another account.
+    /// </summary>
+    [HttpDelete("{id:guid}/transfer")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteWithTransfer(Guid id, [FromBody] DeleteAccountWithTransferRequest request, CancellationToken cancellationToken)
+    {
+        if (UserId == null)
+            return NotFound();
+
+        try
+        {
+            var deleted = await _accountService.DeleteWithTransferAsync(id, request.TargetAccountId, UserId.Value, cancellationToken);
+            return deleted ? NoContent() : NotFound();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { code = "TRANSFER_ERROR", message = ex.Message });
+        }
+    }
 }

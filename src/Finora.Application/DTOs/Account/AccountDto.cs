@@ -12,4 +12,6 @@ public record AccountDto
     public Guid HouseholdId { get; init; }
     /// <summary>False when Free + 2+ accounts and this account is not the chosen primary (or primary not chosen yet).</summary>
     public bool IsActiveForPlan { get; init; } = true;
+    public bool IsArchived { get; init; }
+    public DateTime? ArchivedAt { get; init; }
 }
