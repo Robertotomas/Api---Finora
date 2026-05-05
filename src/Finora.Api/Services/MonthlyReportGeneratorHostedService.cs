@@ -27,11 +27,31 @@ public class MonthlyReportGeneratorHostedService : BackgroundService
             return;
         }
 
+        // 1) Catch-up: generate any missing reports from past months on startup
+        try
+        {
+            _logger.LogInformation("Running startup catch-up for missing reports...");
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var gen = scope.ServiceProvider.GetRequiredService<IMonthlyReportGenerationService>();
+            await gen.GenerateDueReportsAsync(stoppingToken);
+            _logger.LogInformation("Startup catch-up complete.");
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Startup catch-up failed.");
+        }
+
+        // 2) Then check once per day
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+                await Task.Delay(TimeSpan.FromHours(24), stoppingToken);
+
                 await using var scope = _scopeFactory.CreateAsyncScope();
                 var gen = scope.ServiceProvider.GetRequiredService<IMonthlyReportGenerationService>();
                 await gen.GenerateDueReportsAsync(stoppingToken);

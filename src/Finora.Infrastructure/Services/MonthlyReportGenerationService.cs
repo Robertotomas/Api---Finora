@@ -8,6 +8,7 @@ using Finora.Application.Interfaces;
 using Finora.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
 
 namespace Finora.Infrastructure.Services;
@@ -20,6 +21,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
     private readonly IUserRepository _userRepository;
     private readonly ISubscriptionService _subscriptionService;
     private readonly IHostEnvironment _hostEnvironment;
+    private readonly ILogger<MonthlyReportGenerationService> _logger;
 
     private static readonly JsonSerializerOptions JsonHtmlSafe = new()
     {
@@ -32,7 +34,8 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         IHouseholdRepository householdRepository,
         IUserRepository userRepository,
         ISubscriptionService subscriptionService,
-        IHostEnvironment hostEnvironment)
+        IHostEnvironment hostEnvironment,
+        ILogger<MonthlyReportGenerationService> logger)
     {
         _dashboardService = dashboardService;
         _monthlyReportRepository = monthlyReportRepository;
@@ -40,16 +43,22 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         _userRepository = userRepository;
         _subscriptionService = subscriptionService;
         _hostEnvironment = hostEnvironment;
+        _logger = logger;
     }
 
     public async Task GenerateDueReportsAsync(CancellationToken cancellationToken = default)
     {
         var householdIds = await _householdRepository.GetAllHouseholdIdsAsync(cancellationToken);
+        _logger.LogInformation("Report generation: found {Count} households", householdIds.Count);
+
         foreach (var householdId in householdIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!await _subscriptionService.CanAccessMonthlyReportsAsync(householdId, cancellationToken))
+            {
+                _logger.LogInformation("Household {Id}: no report access, skipping", householdId);
                 continue;
+            }
 
             var users = await _userRepository.GetByHouseholdIdAsync(householdId, cancellationToken);
             if (users.Count == 0)
@@ -58,16 +67,61 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
             var anchorUser = users.OrderBy(u => u.CreatedAt).First();
             var tz = ResolveTimeZone(anchorUser.TimeZoneId);
             var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
-            if (localNow.Day != 1)
-                continue;
 
-            var reportYear = localNow.Month == 1 ? localNow.Year - 1 : localNow.Year;
-            var reportMonth = localNow.Month == 1 ? 12 : localNow.Month - 1;
+            // Check all past months since the household was created
+            var createdAt = anchorUser.CreatedAt;
+            var startYear = createdAt.Year;
+            var startMonth = createdAt.Month;
 
-            if (await _monthlyReportRepository.ExistsAsync(householdId, reportYear, reportMonth, cancellationToken))
-                continue;
+            // Iterate from the month after creation up to last month
+            var currentYear = localNow.Year;
+            var currentMonth = localNow.Month;
 
-            await GenerateForHouseholdMonthAsync(householdId, anchorUser.Id, reportYear, reportMonth, cancellationToken);
+            _logger.LogInformation("Household {Id}: created {Year}-{Month:00}, checking up to {CurYear}-{CurMonth:00}",
+                householdId, startYear, startMonth, currentYear, currentMonth);
+
+            var checkYear = startYear;
+            var checkMonth = startMonth;
+
+            while (true)
+            {
+                // Advance to next month
+                checkMonth++;
+                if (checkMonth > 12)
+                {
+                    checkMonth = 1;
+                    checkYear++;
+                }
+
+                // Stop if we've reached the current month (can't generate for current/future months)
+                if (checkYear > currentYear || (checkYear == currentYear && checkMonth >= currentMonth))
+                    break;
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // reportYear/reportMonth = the month we want to generate the report for
+                var reportYear = checkYear;
+                var reportMonth = checkMonth;
+
+                if (await _monthlyReportRepository.ExistsAsync(householdId, reportYear, reportMonth, cancellationToken))
+                {
+                    _logger.LogInformation("Report {Year}-{Month:00} already exists, skipping", reportYear, reportMonth);
+                    continue;
+                }
+
+                _logger.LogInformation("Generating report for {Year}-{Month:00}...", reportYear, reportMonth);
+
+                try
+                {
+                    await GenerateForHouseholdMonthAsync(householdId, anchorUser.Id, reportYear, reportMonth, cancellationToken);
+                    _logger.LogInformation("Generated report for household {HouseholdId}: {Year}-{Month:00}", householdId, reportYear, reportMonth);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to generate report for household {HouseholdId}: {Year}-{Month:00}. Skipping to next.", householdId, reportYear, reportMonth);
+                }
+            }
         }
     }
 
