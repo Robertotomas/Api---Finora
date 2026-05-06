@@ -16,7 +16,20 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000")
+        var origins = new List<string>
+        {
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:3000"
+        };
+
+        var extra = builder.Configuration["App:CorsOrigins"];
+        if (!string.IsNullOrWhiteSpace(extra))
+        {
+            origins.AddRange(extra.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+
+        policy.WithOrigins(origins.ToArray())
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -58,6 +71,13 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     await db.Database.MigrateAsync();
+}
+
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(port))
+{
+    app.Urls.Clear();
+    app.Urls.Add($"http://+:{port}");
 }
 
 app.Run();
