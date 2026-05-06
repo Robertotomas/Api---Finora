@@ -56,7 +56,8 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseSwagger();
 app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Finora API v1"));
 
-if (!app.Environment.IsDevelopment())
+// Render handles HTTPS at the proxy level; skip redirect inside the container
+if (!app.Environment.IsDevelopment() && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("RENDER")))
     app.UseHttpsRedirection();
 
 app.UseAuthentication();
