@@ -56,8 +56,7 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseSwagger();
 app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Finora API v1"));
 
-// Render handles HTTPS at the proxy level; skip redirect inside the container
-if (!app.Environment.IsDevelopment() && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("RENDER")))
+if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 
 app.UseAuthentication();
@@ -72,13 +71,6 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     await db.Database.MigrateAsync();
-}
-
-var port = Environment.GetEnvironmentVariable("PORT");
-if (!string.IsNullOrEmpty(port))
-{
-    app.Urls.Clear();
-    app.Urls.Add($"http://+:{port}");
 }
 
 app.Run();
