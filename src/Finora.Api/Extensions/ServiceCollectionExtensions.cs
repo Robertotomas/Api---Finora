@@ -55,10 +55,42 @@ public static class ServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Finora")
             ?? throw new InvalidOperationException("Connection string 'Finora' not found.");
 
+        // On Render (IPv6-only), resolve the DB host to an IPv4 address
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("RENDER")))
+        {
+            connectionString = ResolveToIPv4(connectionString);
+        }
+
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseNpgsql(connectionString));
 
         return services;
+    }
+
+    private static string ResolveToIPv4(string connectionString)
+    {
+        try
+        {
+            var csb = new Npgsql.NpgsqlConnectionStringBuilder(connectionString);
+            var host = csb.Host;
+            if (string.IsNullOrEmpty(host) || System.Net.IPAddress.TryParse(host, out _))
+                return connectionString;
+
+            var addresses = System.Net.Dns.GetHostAddresses(host);
+            var ipv4 = addresses.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+            if (ipv4 != null)
+            {
+                csb.Host = ipv4.ToString();
+                Console.WriteLine($"[DB] Resolved {host} -> {ipv4}");
+                return csb.ToString();
+            }
+            Console.WriteLine($"[DB] No IPv4 address found for {host}, using original");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[DB] DNS resolution failed: {ex.Message}, using original");
+        }
+        return connectionString;
     }
 
     public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
