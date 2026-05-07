@@ -95,7 +95,7 @@ public class CoupleInvitationsController : ControllerBase
         try
         {
             await _coupleInvitationService.VerifyOtpAndJoinAsync(uid, request.Code, request.MigratePersonalData, cancellationToken);
-            var auth = await _authService.RefreshTokenAsync(uid, cancellationToken);
+            var auth = await _authService.RefreshTokenForUserAsync(uid, cancellationToken);
             return Ok(auth);
         }
         catch (InvalidOperationException ex)

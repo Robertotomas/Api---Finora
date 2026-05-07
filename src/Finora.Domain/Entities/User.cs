@@ -17,6 +17,10 @@ public class User : BaseEntity
     /// <summary>IANA timezone id (e.g. Europe/Lisbon) for scheduling monthly reports.</summary>
     public string? TimeZoneId { get; set; }
 
+    // Account lockout
+    public int FailedLoginAttempts { get; set; }
+    public DateTime? LockedUntil { get; set; }
+
     /// <summary>True when this user joined the household as the invited partner (convite casal).</summary>
     public bool IsCoupleGuest { get; set; }
 

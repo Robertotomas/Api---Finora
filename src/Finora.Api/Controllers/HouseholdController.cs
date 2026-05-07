@@ -118,7 +118,7 @@ public class HouseholdController : ControllerBase
         try
         {
             await _householdService.LeaveCoupleHouseholdAsync(UserId.Value, cancellationToken);
-            var auth = await _authService.RefreshTokenAsync(UserId.Value, cancellationToken);
+            var auth = await _authService.RefreshTokenForUserAsync(UserId.Value, cancellationToken);
             return Ok(auth);
         }
         catch (InvalidOperationException ex)

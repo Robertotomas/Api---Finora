@@ -3,6 +3,7 @@ using Finora.Application.DTOs.Reports;
 using Finora.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Finora.Api.Controllers;
 
@@ -98,6 +99,7 @@ public class ReportsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/refresh")]
+    [EnableRateLimiting("reports")]
     [ProducesResponseType(typeof(MonthlyReportListItemDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -119,6 +121,7 @@ public class ReportsController : ControllerBase
 
     /// <summary>Debug: generate PDF for a month (Development only).</summary>
     [HttpPost("generate")]
+    [EnableRateLimiting("reports")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

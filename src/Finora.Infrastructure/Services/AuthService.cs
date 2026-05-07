@@ -1,11 +1,14 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Finora.Application.DTOs.Auth;
 using Finora.Application.Interfaces;
 using Finora.Application.Options;
 using Finora.Domain.Entities;
 using Finora.Domain.Enums;
+using Finora.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
@@ -17,19 +20,26 @@ public class AuthService : IAuthService
     private readonly IHouseholdRepository _householdRepository;
     private readonly ISubscriptionRepository _subscriptionRepository;
     private readonly ICoupleInvitationService _coupleInvitationService;
+    private readonly ApplicationDbContext _dbContext;
     private readonly JwtOptions _jwtOptions;
+
+    private const int MaxFailedAttempts = 5;
+    private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan RefreshTokenLifetime = TimeSpan.FromDays(30);
 
     public AuthService(
         IUserRepository userRepository,
         IHouseholdRepository householdRepository,
         ISubscriptionRepository subscriptionRepository,
         ICoupleInvitationService coupleInvitationService,
+        ApplicationDbContext dbContext,
         IOptions<JwtOptions> jwtOptions)
     {
         _userRepository = userRepository;
         _householdRepository = householdRepository;
         _subscriptionRepository = subscriptionRepository;
         _coupleInvitationService = coupleInvitationService;
+        _dbContext = dbContext;
         _jwtOptions = jwtOptions.Value;
     }
 
@@ -107,13 +117,74 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
     {
-        var user = await _userRepository.GetByEmailAsync(request.Email, cancellationToken);
+        var user = await _dbContext.Users
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == request.Email.ToLower(), cancellationToken);
+
         if (user == null)
             throw new UnauthorizedAccessException("Invalid email or password.");
 
-        if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
-            throw new UnauthorizedAccessException("Invalid email or password.");
+        // Check lockout
+        if (user.LockedUntil.HasValue && user.LockedUntil.Value > DateTime.UtcNow)
+        {
+            var remaining = (int)Math.Ceiling((user.LockedUntil.Value - DateTime.UtcNow).TotalMinutes);
+            throw new UnauthorizedAccessException($"Conta temporariamente bloqueada. Tenta novamente em {remaining} minuto(s).");
+        }
 
+        if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+        {
+            // Increment failed attempts
+            user.FailedLoginAttempts++;
+            if (user.FailedLoginAttempts >= MaxFailedAttempts)
+            {
+                user.LockedUntil = DateTime.UtcNow.Add(LockoutDuration);
+                user.FailedLoginAttempts = 0;
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                throw new UnauthorizedAccessException($"Conta bloqueada por {(int)LockoutDuration.TotalMinutes} minutos após demasiadas tentativas falhadas.");
+            }
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            throw new UnauthorizedAccessException("Invalid email or password.");
+        }
+
+        // Reset on success
+        if (user.FailedLoginAttempts > 0 || user.LockedUntil.HasValue)
+        {
+            user.FailedLoginAttempts = 0;
+            user.LockedUntil = null;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return await GenerateAuthResponseAsync(user, cancellationToken);
+    }
+
+    public async Task<AuthResponse> RefreshTokenAsync(string refreshToken, CancellationToken cancellationToken = default)
+    {
+        var tokenHash = HashToken(refreshToken);
+
+        var stored = await _dbContext.RefreshTokens
+            .Include(rt => rt.User)
+            .FirstOrDefaultAsync(rt => rt.TokenHash == tokenHash && !rt.IsRevoked, cancellationToken);
+
+        if (stored == null)
+            throw new UnauthorizedAccessException("Refresh token inválido.");
+
+        if (stored.ExpiresAt < DateTime.UtcNow)
+        {
+            stored.IsRevoked = true;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            throw new UnauthorizedAccessException("Refresh token expirado. Faz login novamente.");
+        }
+
+        // Revoke old token (rotation)
+        stored.IsRevoked = true;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return await GenerateAuthResponseAsync(stored.User!, cancellationToken);
+    }
+
+    public async Task<AuthResponse> RefreshTokenForUserAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken)
+            ?? throw new InvalidOperationException("Utilizador não encontrado.");
         return await GenerateAuthResponseAsync(user, cancellationToken);
     }
 
@@ -138,13 +209,6 @@ public class AuthService : IAuthService
         return MapToDto(user);
     }
 
-    public async Task<AuthResponse> RefreshTokenAsync(Guid userId, CancellationToken cancellationToken = default)
-    {
-        var user = await _userRepository.GetByIdAsync(userId, cancellationToken)
-            ?? throw new InvalidOperationException("Utilizador não encontrado.");
-        return await GenerateAuthResponseAsync(user, cancellationToken);
-    }
-
     private static UserDto MapToDto(User user) => new()
     {
         Id = user.Id,
@@ -158,20 +222,33 @@ public class AuthService : IAuthService
         CoupleJoinDataMigrated = user.CoupleJoinDataMigrated
     };
 
-    private Task<AuthResponse> GenerateAuthResponseAsync(User user, CancellationToken cancellationToken)
+    private async Task<AuthResponse> GenerateAuthResponseAsync(User user, CancellationToken cancellationToken)
     {
-        var token = GenerateJwtToken(user);
+        var accessToken = GenerateJwtToken(user);
         var expiresIn = _jwtOptions.ExpirationMinutes * 60;
 
-        var response = new AuthResponse
+        // Generate refresh token
+        var rawRefreshToken = GenerateRawRefreshToken();
+        var refreshTokenEntity = new RefreshToken
         {
-            AccessToken = token,
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            TokenHash = HashToken(rawRefreshToken),
+            ExpiresAt = DateTime.UtcNow.Add(RefreshTokenLifetime),
+            CreatedAt = DateTime.UtcNow,
+            IsRevoked = false
+        };
+        _dbContext.RefreshTokens.Add(refreshTokenEntity);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return new AuthResponse
+        {
+            AccessToken = accessToken,
+            RefreshToken = rawRefreshToken,
             TokenType = "Bearer",
             ExpiresIn = expiresIn,
             User = MapToDto(user)
         };
-
-        return Task.FromResult(response);
     }
 
     private string GenerateJwtToken(User user)
@@ -198,5 +275,17 @@ public class AuthService : IAuthService
         );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private static string GenerateRawRefreshToken()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(64);
+        return Convert.ToBase64String(bytes);
+    }
+
+    private static string HashToken(string token)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+        return Convert.ToHexStringLower(bytes);
     }
 }
