@@ -60,7 +60,7 @@ public class AuthService : IAuthService
             {
                 Id = Guid.NewGuid(),
                 Email = emailNorm,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, BCrypt.Net.BCrypt.GenerateSalt(12)),
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, BCrypt.Net.BCrypt.GenerateSalt(10)),
                 FirstName = request.FirstName.Trim(),
                 LastName = request.LastName.Trim(),
                 Gender = request.Gender,
@@ -102,7 +102,7 @@ public class AuthService : IAuthService
         {
             Id = Guid.NewGuid(),
             Email = request.Email.Trim().ToLowerInvariant(),
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, BCrypt.Net.BCrypt.GenerateSalt(12)),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, BCrypt.Net.BCrypt.GenerateSalt(10)),
             FirstName = request.FirstName.Trim(),
             LastName = request.LastName.Trim(),
             Gender = request.Gender,
