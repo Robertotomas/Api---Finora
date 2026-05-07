@@ -81,6 +81,77 @@ public class DashboardRepository : IDashboardRepository
         return data.Select(x => (x.Category, x.Amount)).ToList();
     }
 
+    public async Task<(decimal Income, decimal Expenses)> GetMonthlyIncomeAndExpensesAsync(Guid householdId, int year, int month, CancellationToken cancellationToken = default)
+    {
+        var start = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var end = start.AddMonths(1);
+
+        var result = await _context.Transactions
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId && t.Date >= start && t.Date < end)
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Income = g.Sum(t => t.Type == TransactionType.Income ? t.Amount : 0m),
+                Expenses = g.Sum(t => t.Type == TransactionType.Expense ? t.Amount : 0m)
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return result != null ? (result.Income, result.Expenses) : (0m, 0m);
+    }
+
+    public async Task<(IReadOnlyList<(int Category, decimal Amount)> Expenses, IReadOnlyList<(int Category, decimal Amount)> Income)> GetAllCategoriesForMonthAsync(Guid householdId, int year, int month, CancellationToken cancellationToken = default)
+    {
+        var start = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var end = start.AddMonths(1);
+
+        var data = await _context.Transactions
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId && t.Date >= start && t.Date < end && (t.Type == TransactionType.Income || t.Type == TransactionType.Expense))
+            .GroupBy(t => new { t.Type, t.Category })
+            .Select(g => new { g.Key.Type, Category = (int)g.Key.Category, Amount = g.Sum(t => t.Amount) })
+            .ToListAsync(cancellationToken);
+
+        var expenses = data.Where(x => x.Type == TransactionType.Expense).OrderByDescending(x => x.Amount).Select(x => (x.Category, x.Amount)).ToList();
+        var income = data.Where(x => x.Type == TransactionType.Income).OrderByDescending(x => x.Amount).Select(x => (x.Category, x.Amount)).ToList();
+        return (expenses, income);
+    }
+
+    public async Task<(decimal Income, decimal Expenses, IReadOnlyList<(int Category, decimal Amount)> ExpensesByCategory, IReadOnlyList<(int Category, decimal Amount)> IncomeByCategory)> GetRangeAggregateAsync(Guid householdId, int year, int fromMonth, int toMonth, CancellationToken cancellationToken = default)
+    {
+        var start = new DateTime(year, fromMonth, 1, 0, 0, 0, DateTimeKind.Utc);
+        var end = new DateTime(year, toMonth, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(1);
+
+        var txs = _context.Transactions
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId && t.Date >= start && t.Date < end);
+
+        var totals = await txs
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Income = g.Sum(t => t.Type == TransactionType.Income ? t.Amount : 0m),
+                Expenses = g.Sum(t => t.Type == TransactionType.Expense ? t.Amount : 0m)
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var categories = await txs
+            .Where(t => t.Type == TransactionType.Income || t.Type == TransactionType.Expense)
+            .GroupBy(t => new { t.Type, t.Category })
+            .Select(g => new { g.Key.Type, Category = (int)g.Key.Category, Amount = g.Sum(t => t.Amount) })
+            .ToListAsync(cancellationToken);
+
+        var expensesByCategory = categories.Where(x => x.Type == TransactionType.Expense).OrderByDescending(x => x.Amount).Select(x => (x.Category, x.Amount)).ToList();
+        var incomeByCategory = categories.Where(x => x.Type == TransactionType.Income).OrderByDescending(x => x.Amount).Select(x => (x.Category, x.Amount)).ToList();
+
+        return (
+            totals?.Income ?? 0m,
+            totals?.Expenses ?? 0m,
+            expensesByCategory,
+            incomeByCategory
+        );
+    }
+
     public async Task<IReadOnlyList<(int Year, int Month, decimal Income, decimal Expenses)>> GetMonthlyTrendAsync(Guid householdId, int monthsBack, CancellationToken cancellationToken = default)
     {
         var endDate = DateTime.UtcNow;

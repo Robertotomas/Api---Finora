@@ -10,6 +10,12 @@ public interface IDashboardRepository
     Task<decimal> GetMonthlyExpensesAsync(Guid householdId, int year, int month, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<(int Category, decimal Amount)>> GetExpensesByCategoryAsync(Guid householdId, int year, int month, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<(int Category, decimal Amount)>> GetIncomeByCategoryAsync(Guid householdId, int year, int month, CancellationToken cancellationToken = default);
+    /// <summary>Single query: income + expenses for a month.</summary>
+    Task<(decimal Income, decimal Expenses)> GetMonthlyIncomeAndExpensesAsync(Guid householdId, int year, int month, CancellationToken cancellationToken = default);
+    /// <summary>Single query: income + expenses by category for a month.</summary>
+    Task<(IReadOnlyList<(int Category, decimal Amount)> Expenses, IReadOnlyList<(int Category, decimal Amount)> Income)> GetAllCategoriesForMonthAsync(Guid householdId, int year, int month, CancellationToken cancellationToken = default);
+    /// <summary>Range query: income + expenses + categories for multiple months (YTD).</summary>
+    Task<(decimal Income, decimal Expenses, IReadOnlyList<(int Category, decimal Amount)> ExpensesByCategory, IReadOnlyList<(int Category, decimal Amount)> IncomeByCategory)> GetRangeAggregateAsync(Guid householdId, int year, int fromMonth, int toMonth, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<(int Year, int Month, decimal Income, decimal Expenses)>> GetMonthlyTrendAsync(Guid householdId, int monthsBack, CancellationToken cancellationToken = default);
     Task<decimal> GetYearlyIncomeAsync(Guid householdId, int year, CancellationToken cancellationToken = default);
     Task<decimal> GetYearlyExpensesAsync(Guid householdId, int year, CancellationToken cancellationToken = default);

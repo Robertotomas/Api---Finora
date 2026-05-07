@@ -101,7 +101,7 @@ public class SubscriptionController : ControllerBase
         if (effectivePlan == SubscriptionPlan.Free)
         {
             var accounts = await _accountRepository.GetByHouseholdIdAsync(householdId.Value, cancellationToken);
-            var transactions = await _transactionRepository.GetByHouseholdAsync(householdId.Value, null, from, to, cancellationToken);
+            var transactions = await _transactionRepository.GetByHouseholdAsync(householdId.Value, null, from, to, cancellationToken: cancellationToken);
             var recurring = await _recurringTransactionRepository.GetActiveForMonthAsync(householdId.Value, now.Year, now.Month, cancellationToken);
 
             var incomeCount = transactions.Count(t => t.Type == TransactionType.Income)

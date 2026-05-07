@@ -21,12 +21,12 @@ public class TransactionService : ITransactionService
         _userRepository = userRepository;
     }
 
-    public async Task<IReadOnlyList<TransactionDto>> GetByHouseholdAsync(Guid householdId, Guid userId, Guid? accountId, DateTime? from, DateTime? to, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<TransactionDto>> GetByHouseholdAsync(Guid householdId, Guid userId, Guid? accountId, DateTime? from, DateTime? to, int? limit = null, CancellationToken cancellationToken = default)
     {
         if (!await UserBelongsToHouseholdAsync(userId, householdId, cancellationToken))
             return Array.Empty<TransactionDto>();
 
-        var transactions = await _transactionRepository.GetByHouseholdAsync(householdId, accountId, from, to, cancellationToken);
+        var transactions = await _transactionRepository.GetByHouseholdAsync(householdId, accountId, from, to, limit, cancellationToken);
         return transactions.Select(ToDto).ToList();
     }
 

@@ -65,7 +65,7 @@ public class SubscriptionService : ISubscriptionService
         var from = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
         var to = from.AddMonths(1).AddTicks(-1);
 
-        var transactions = await _transactionRepository.GetByHouseholdAsync(householdId, null, from, to, cancellationToken);
+        var transactions = await _transactionRepository.GetByHouseholdAsync(householdId, null, from, to, cancellationToken: cancellationToken);
         var recurring = await _recurringTransactionRepository.GetActiveForMonthAsync(householdId, year, month, cancellationToken);
         var count = transactions.Count(t => t.Type == type) + recurring.Count(t => t.Type == type);
 

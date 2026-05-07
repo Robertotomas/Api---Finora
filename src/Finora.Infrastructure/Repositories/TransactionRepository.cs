@@ -29,7 +29,7 @@ public class TransactionRepository : ITransactionRepository
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<Transaction>> GetByHouseholdAsync(Guid householdId, Guid? accountId, DateTime? from, DateTime? to, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Transaction>> GetByHouseholdAsync(Guid householdId, Guid? accountId, DateTime? from, DateTime? to, int? limit = null, CancellationToken cancellationToken = default)
     {
         var query = _context.Transactions
             .Include(t => t.Splits)
@@ -45,10 +45,14 @@ public class TransactionRepository : ITransactionRepository
         if (to.HasValue)
             query = query.Where(t => t.Date <= to.Value);
 
-        return await query
+        var ordered = query
             .OrderByDescending(t => t.Date)
-            .ThenByDescending(t => t.CreatedAt)
-            .ToListAsync(cancellationToken);
+            .ThenByDescending(t => t.CreatedAt);
+
+        if (limit.HasValue && limit.Value > 0)
+            return await ordered.Take(limit.Value).ToListAsync(cancellationToken);
+
+        return await ordered.ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyDictionary<Guid, DateTime>> GetMinTransactionDateByAccountAsync(

@@ -59,12 +59,14 @@ public class TransactionsController : ControllerBase
     /// <param name="accountId">Optional filter by account.</param>
     /// <param name="from">Optional start date (yyyy-MM-dd, inclusive).</param>
     /// <param name="to">Optional end date (yyyy-MM-dd, inclusive).</param>
+    /// <param name="limit">Optional max number of results (e.g. 5 for dashboard preview).</param>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<TransactionDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<TransactionDto>>> GetAll(
         [FromQuery] Guid? accountId,
         [FromQuery] string? from,
         [FromQuery] string? to,
+        [FromQuery] int? limit,
         CancellationToken cancellationToken)
     {
         if (UserId == null)
@@ -81,7 +83,7 @@ public class TransactionsController : ControllerBase
         if (!string.IsNullOrWhiteSpace(to) && DateTime.TryParse(to, out var td))
             toDate = DateTime.SpecifyKind(td.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
 
-        var transactions = await _transactionService.GetByHouseholdAsync(householdId.Value, UserId!.Value, accountId, fromDate, toDate, cancellationToken);
+        var transactions = await _transactionService.GetByHouseholdAsync(householdId.Value, UserId!.Value, accountId, fromDate, toDate, limit, cancellationToken);
         return Ok(transactions);
     }
 

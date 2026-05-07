@@ -312,7 +312,7 @@ public class CoupleInvitationService : ICoupleInvitationService
     {
         var accounts = await _accountRepository.GetByHouseholdIdAsync(householdId, cancellationToken);
         if (accounts.Count > 0) return true;
-        var transactions = await _transactionRepository.GetByHouseholdAsync(householdId, null, null, null, cancellationToken);
+        var transactions = await _transactionRepository.GetByHouseholdAsync(householdId, null, null, null, limit: 1, cancellationToken);
         if (transactions.Count > 0) return true;
         var recurring = await _recurringTransactionRepository.GetByHouseholdAsync(householdId, cancellationToken);
         if (recurring.Count > 0) return true;
@@ -398,7 +398,7 @@ public class CoupleInvitationService : ICoupleInvitationService
             throw new InvalidOperationException(
                 "Remove as contas do teu agregado atual antes de aceitar o convite (ou exporta os dados).");
 
-        var transactions = await _transactionRepository.GetByHouseholdAsync(hid, null, null, null, cancellationToken);
+        var transactions = await _transactionRepository.GetByHouseholdAsync(hid, null, null, null, limit: 1, cancellationToken);
         if (transactions.Count > 0)
             throw new InvalidOperationException(
                 "O teu agregado atual tem movimentos. Remove-os ou exporta antes de aceitar o convite.");
