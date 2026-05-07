@@ -66,6 +66,9 @@ app.MapControllers();
 // Redirect root to Swagger
 app.MapGet("/", () => Results.Redirect("/swagger"));
 
+// Health check (used by cron-job.org to keep Render awake)
+app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
+
 // Apply pending migrations on startup
 using (var scope = app.Services.CreateScope())
 {
