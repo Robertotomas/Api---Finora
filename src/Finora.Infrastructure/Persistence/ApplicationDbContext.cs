@@ -22,6 +22,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<MonthlyReport> MonthlyReports => Set<MonthlyReport>();
     public DbSet<CoupleInvitation> CoupleInvitations => Set<CoupleInvitation>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<MonthlyBudget> MonthlyBudgets => Set<MonthlyBudget>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -174,6 +175,19 @@ public class ApplicationDbContext : DbContext
 
             entity.HasOne(e => e.Household)
                 .WithMany(h => h.MonthlyReports)
+                .HasForeignKey(e => e.HouseholdId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<MonthlyBudget>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ExpectedIncome).HasPrecision(18, 2);
+            entity.Property(e => e.ExpectedExpenses).HasPrecision(18, 2);
+            entity.HasIndex(e => new { e.HouseholdId, e.Year, e.Month }).IsUnique();
+
+            entity.HasOne(e => e.Household)
+                .WithMany(h => h.MonthlyBudgets)
                 .HasForeignKey(e => e.HouseholdId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
