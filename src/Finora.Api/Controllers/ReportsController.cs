@@ -15,6 +15,7 @@ public class ReportsController : ControllerBase
     private readonly IMonthlyReportGenerationService _generationService;
     private readonly IHouseholdService _householdService;
     private readonly ISubscriptionService _subscriptionService;
+    private readonly IFileStorageService _fileStorage;
     private readonly IHostEnvironment _hostEnvironment;
 
     public ReportsController(
@@ -22,12 +23,14 @@ public class ReportsController : ControllerBase
         IMonthlyReportGenerationService generationService,
         IHouseholdService householdService,
         ISubscriptionService subscriptionService,
+        IFileStorageService fileStorage,
         IHostEnvironment hostEnvironment)
     {
         _monthlyReportRepository = monthlyReportRepository;
         _generationService = generationService;
         _householdService = householdService;
         _subscriptionService = subscriptionService;
+        _fileStorage = fileStorage;
         _hostEnvironment = hostEnvironment;
     }
 
@@ -86,13 +89,12 @@ public class ReportsController : ControllerBase
         if (report == null || report.HouseholdId != householdId.Value)
             return NotFound();
 
-        var fullPath = Path.Combine(_hostEnvironment.ContentRootPath, "uploads", report.FileRelativePath.Replace('/', Path.DirectorySeparatorChar));
-        if (!System.IO.File.Exists(fullPath))
+        var pdfBytes = await _fileStorage.DownloadAsync(report.FileRelativePath, cancellationToken);
+        if (pdfBytes == null)
             return NotFound();
 
-        var stream = System.IO.File.OpenRead(fullPath);
         var fileName = $"finora-relatorio-{report.Year}-{report.Month:00}.pdf";
-        return File(stream, "application/pdf", fileName);
+        return File(pdfBytes, "application/pdf", fileName);
     }
 
     [HttpPost("{id:guid}/refresh")]

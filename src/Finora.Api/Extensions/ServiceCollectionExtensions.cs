@@ -45,6 +45,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITransactionRepository, TransactionRepository>();
         services.AddScoped<IMonthlyReportRepository, MonthlyReportRepository>();
         services.AddScoped<IMonthlyReportGenerationService, MonthlyReportGenerationService>();
+        services.AddHttpClient<IFileStorageService, SupabaseStorageService>();
         services.AddScoped<ICoupleInvitationRepository, CoupleInvitationRepository>();
         services.AddScoped<ICoupleInvitationService, CoupleInvitationService>();
         return services;

@@ -7,7 +7,6 @@ using Finora.Application.DTOs.Reports;
 using Finora.Application.Interfaces;
 using Finora.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
 
@@ -20,7 +19,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
     private readonly IHouseholdRepository _householdRepository;
     private readonly IUserRepository _userRepository;
     private readonly ISubscriptionService _subscriptionService;
-    private readonly IHostEnvironment _hostEnvironment;
+    private readonly IFileStorageService _fileStorage;
     private readonly ILogger<MonthlyReportGenerationService> _logger;
 
     private static readonly JsonSerializerOptions JsonHtmlSafe = new()
@@ -34,7 +33,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         IHouseholdRepository householdRepository,
         IUserRepository userRepository,
         ISubscriptionService subscriptionService,
-        IHostEnvironment hostEnvironment,
+        IFileStorageService fileStorage,
         ILogger<MonthlyReportGenerationService> logger)
     {
         _dashboardService = dashboardService;
@@ -42,7 +41,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         _householdRepository = householdRepository;
         _userRepository = userRepository;
         _subscriptionService = subscriptionService;
-        _hostEnvironment = hostEnvironment;
+        _fileStorage = fileStorage;
         _logger = logger;
     }
 
@@ -153,18 +152,13 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
             trendMonths: 6,
             cancellationToken);
 
-        var uploadsRoot = Path.Combine(_hostEnvironment.ContentRootPath, "uploads");
-        var householdDir = Path.Combine(uploadsRoot, "reports", householdId.ToString("N"));
-        Directory.CreateDirectory(householdDir);
-
         var fileName = $"{year}-{month:00}.pdf";
-        var fullPath = Path.Combine(householdDir, fileName);
         var relativePath = $"reports/{householdId:N}/{fileName}";
 
         var html = BuildHtmlDocument(dashboard, year, month);
         var pdfBytes = await RenderPdfAsync(html, cancellationToken);
 
-        await File.WriteAllBytesAsync(fullPath, pdfBytes, cancellationToken);
+        await _fileStorage.UploadAsync(relativePath, pdfBytes, "application/pdf", cancellationToken);
 
         var entity = new MonthlyReport
         {
@@ -212,16 +206,9 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
             trendMonths: 6,
             cancellationToken);
 
-        var uploadsRoot = Path.Combine(_hostEnvironment.ContentRootPath, "uploads");
-        var relativeNorm = report.FileRelativePath.Replace('/', Path.DirectorySeparatorChar);
-        var fullPath = Path.Combine(uploadsRoot, relativeNorm);
-        var dir = Path.GetDirectoryName(fullPath);
-        if (!string.IsNullOrEmpty(dir))
-            Directory.CreateDirectory(dir);
-
         var html = BuildHtmlDocument(dashboard, report.Year, report.Month);
         var pdfBytes = await RenderPdfAsync(html, cancellationToken);
-        await File.WriteAllBytesAsync(fullPath, pdfBytes, cancellationToken);
+        await _fileStorage.UploadAsync(report.FileRelativePath, pdfBytes, "application/pdf", cancellationToken);
 
         var generatedAt = DateTime.UtcNow;
         var ok = await _monthlyReportRepository.UpdateGeneratedMetadataAsync(
