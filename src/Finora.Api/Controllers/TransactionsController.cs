@@ -88,6 +88,41 @@ public class TransactionsController : ControllerBase
     }
 
     /// <summary>
+    /// Get paginated transactions for the current user's household.
+    /// </summary>
+    [HttpGet("paged")]
+    public async Task<IActionResult> GetPaged(
+        [FromQuery] Guid? accountId,
+        [FromQuery] string? from,
+        [FromQuery] string? to,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 15,
+        CancellationToken cancellationToken = default)
+    {
+        if (UserId == null)
+            return NotFound();
+
+        var householdId = await ResolveHouseholdIdAsync(cancellationToken);
+        if (householdId == null)
+            return NotFound();
+
+        DateTime? fromDate = null;
+        DateTime? toDate = null;
+        if (!string.IsNullOrWhiteSpace(from) && DateTime.TryParse(from, out var fd))
+            fromDate = DateTime.SpecifyKind(fd.Date, DateTimeKind.Utc);
+        if (!string.IsNullOrWhiteSpace(to) && DateTime.TryParse(to, out var td))
+            toDate = DateTime.SpecifyKind(td.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
+
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var (items, totalCount) = await _transactionService.GetByHouseholdPagedAsync(
+            householdId.Value, UserId!.Value, accountId, fromDate, toDate, page, pageSize, cancellationToken);
+
+        return Ok(new { items, totalCount, page, pageSize, totalPages = (int)Math.Ceiling((double)totalCount / pageSize) });
+    }
+
+    /// <summary>
     /// Get transaction by ID.
     /// </summary>
     [HttpGet("{id:guid}")]

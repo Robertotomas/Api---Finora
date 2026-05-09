@@ -55,6 +55,34 @@ public class TransactionRepository : ITransactionRepository
         return await ordered.ToListAsync(cancellationToken);
     }
 
+    public async Task<(IReadOnlyList<Transaction> Items, int TotalCount)> GetByHouseholdPagedAsync(Guid householdId, Guid? accountId, DateTime? from, DateTime? to, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var query = _context.Transactions
+            .Include(t => t.Splits)
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId);
+
+        if (accountId.HasValue)
+            query = query.Where(t => t.AccountId == accountId.Value || t.DestinationAccountId == accountId.Value);
+
+        if (from.HasValue)
+            query = query.Where(t => t.Date >= from.Value);
+
+        if (to.HasValue)
+            query = query.Where(t => t.Date <= to.Value);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        var items = await query
+            .OrderByDescending(t => t.Date)
+            .ThenByDescending(t => t.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return (items, totalCount);
+    }
+
     public async Task<IReadOnlyDictionary<Guid, DateTime>> GetMinTransactionDateByAccountAsync(
         Guid householdId,
         CancellationToken cancellationToken = default)

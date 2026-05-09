@@ -30,6 +30,15 @@ public class TransactionService : ITransactionService
         return transactions.Select(ToDto).ToList();
     }
 
+    public async Task<(IReadOnlyList<TransactionDto> Items, int TotalCount)> GetByHouseholdPagedAsync(Guid householdId, Guid userId, Guid? accountId, DateTime? from, DateTime? to, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        if (!await UserBelongsToHouseholdAsync(userId, householdId, cancellationToken))
+            return (Array.Empty<TransactionDto>(), 0);
+
+        var (items, totalCount) = await _transactionRepository.GetByHouseholdPagedAsync(householdId, accountId, from, to, page, pageSize, cancellationToken);
+        return (items.Select(ToDto).ToList(), totalCount);
+    }
+
     public async Task<TransactionDto?> GetByIdAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
     {
         var transaction = await _transactionRepository.GetByIdAsync(id, cancellationToken);
