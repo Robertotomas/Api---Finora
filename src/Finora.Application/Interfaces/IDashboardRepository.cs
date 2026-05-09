@@ -1,3 +1,5 @@
+using Finora.Domain.Enums;
+
 namespace Finora.Application.Interfaces;
 
 public record AccountBalanceAtDate(Guid AccountId, string Name, int Type, string Currency, decimal Balance);
@@ -30,4 +32,7 @@ public interface IDashboardRepository
     Task<IReadOnlyList<(int Category, decimal Amount)>> GetTotalExpensesByCategoryAsync(Guid householdId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<(int Category, decimal Amount)>> GetTotalIncomeByCategoryAsync(Guid householdId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AccountBalanceAtDate>> GetAccountBalancesNowAsync(Guid householdId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TransactionSnapshot>> GetTransactionsInRangeAsync(Guid householdId, DateTime from, DateTime to, CancellationToken cancellationToken = default);
 }
+
+public record TransactionSnapshot(DateTime Date, TransactionType Type, decimal Amount);
