@@ -322,6 +322,17 @@ public class DashboardRepository : IDashboardRepository
         return data.Select(t => new TransactionSnapshot(t.Date, t.Type, t.Amount)).ToList();
     }
 
+    public async Task<IReadOnlyList<TransactionWithAccountSnapshot>> GetTransactionsWithAccountInRangeAsync(Guid householdId, DateTime from, DateTime to, CancellationToken cancellationToken = default)
+    {
+        var data = await _context.Transactions
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId && t.Date >= from && t.Date < to)
+            .Select(t => new { t.Date, t.Type, t.Amount, t.AccountId, t.DestinationAccountId })
+            .ToListAsync(cancellationToken);
+
+        return data.Select(t => new TransactionWithAccountSnapshot(t.Date, t.Type, t.Amount, t.AccountId, t.DestinationAccountId)).ToList();
+    }
+
     private async Task<IReadOnlyList<AccountBalanceAtDate>> GetAccountBalancesAtDateAsync(Guid householdId, DateTime firstDayAfterPeriod, CancellationToken cancellationToken = default)
     {
         var accounts = await _context.Accounts

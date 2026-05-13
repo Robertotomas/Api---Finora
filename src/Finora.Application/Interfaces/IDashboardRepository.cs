@@ -33,6 +33,8 @@ public interface IDashboardRepository
     Task<IReadOnlyList<(int Category, decimal Amount)>> GetTotalIncomeByCategoryAsync(Guid householdId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AccountBalanceAtDate>> GetAccountBalancesNowAsync(Guid householdId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TransactionSnapshot>> GetTransactionsInRangeAsync(Guid householdId, DateTime from, DateTime to, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TransactionWithAccountSnapshot>> GetTransactionsWithAccountInRangeAsync(Guid householdId, DateTime from, DateTime to, CancellationToken cancellationToken = default);
 }
 
 public record TransactionSnapshot(DateTime Date, TransactionType Type, decimal Amount);
+public record TransactionWithAccountSnapshot(DateTime Date, TransactionType Type, decimal Amount, Guid AccountId, Guid? DestinationAccountId);

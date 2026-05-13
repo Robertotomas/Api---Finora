@@ -131,88 +131,161 @@ public class DashboardController : ControllerBase
             var accounts = await _accountRepository.GetByHouseholdIdAsync(householdId.Value, cancellationToken);
             var activeAccounts = accounts.Where(a => !a.IsArchived).ToList();
 
-            // 2. Get all real transactions from 'from' date onwards (we need future deltas to subtract)
+            // 2. Get ALL real transactions (not just in range) to compute initial balances per account
+            var allTransactions = await _dashboardRepository.GetTransactionsWithAccountInRangeAsync(
+                householdId.Value, DateTime.MinValue, today.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc), cancellationToken);
+
+            // 3. Compute initial balance per account: Balance - sum of all transaction effects
+            //    Also find the earliest transaction date per account
+            //    For transfers: source account loses Amount, destination gains Amount
+            var txSumByAccount = new Dictionary<Guid, decimal>();
+            var earliestTxByAccount = new Dictionary<Guid, DateTime>();
+            foreach (var tx in allTransactions)
+            {
+                if (tx.Type == TransactionType.Transfer)
+                {
+                    // Source loses money
+                    txSumByAccount[tx.AccountId] = txSumByAccount.GetValueOrDefault(tx.AccountId) - tx.Amount;
+                    // Destination gains money
+                    if (tx.DestinationAccountId.HasValue)
+                        txSumByAccount[tx.DestinationAccountId.Value] = txSumByAccount.GetValueOrDefault(tx.DestinationAccountId.Value) + tx.Amount;
+                }
+                else
+                {
+                    var delta = tx.Type == TransactionType.Income ? tx.Amount : -tx.Amount;
+                    txSumByAccount[tx.AccountId] = txSumByAccount.GetValueOrDefault(tx.AccountId) + delta;
+                }
+
+                // Track earliest tx date per account (source)
+                if (!earliestTxByAccount.TryGetValue(tx.AccountId, out var earliest) || tx.Date < earliest)
+                    earliestTxByAccount[tx.AccountId] = tx.Date;
+                // Track earliest tx date for destination account too
+                if (tx.DestinationAccountId.HasValue)
+                {
+                    if (!earliestTxByAccount.TryGetValue(tx.DestinationAccountId.Value, out var destEarliest) || tx.Date < destEarliest)
+                        earliestTxByAccount[tx.DestinationAccountId.Value] = tx.Date;
+                }
+            }
+
+            var accountInitialBalances = activeAccounts.Select(a =>
+            {
+                var createdDate = DateOnly.FromDateTime(a.CreatedAt);
+                // Use earliest of: account creation date or first transaction date
+                if (earliestTxByAccount.TryGetValue(a.Id, out var firstTx))
+                {
+                    var firstTxDate = DateOnly.FromDateTime(firstTx);
+                    if (firstTxDate < createdDate)
+                        createdDate = firstTxDate;
+                }
+                return new
+                {
+                    a.Id,
+                    InitialBalance = a.Balance - txSumByAccount.GetValueOrDefault(a.Id, 0m),
+                    CreatedDate = createdDate
+                };
+            }).ToList();
+
+            // 4. Get transactions in chart range for daily deltas
             var fromDt = from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
             var tomorrowDt = today.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
 
-            var transactions = await _dashboardRepository.GetTransactionsInRangeAsync(
-                householdId.Value, fromDt, tomorrowDt, cancellationToken);
+            var rangeTransactions = allTransactions
+                .Where(t => t.Date >= fromDt && t.Date < tomorrowDt)
+                .ToList();
 
-            // 3. Get recurring transactions
+            // 5. Get recurring transactions
             var recurringTxs = await _recurringRepository.GetByHouseholdAsync(householdId.Value, cancellationToken);
             var activeRecurring = recurringTxs.ToList();
             var archivedIds = accounts.Where(a => a.IsArchived).Select(a => a.Id).ToHashSet();
 
-            // 4. Current balance = sum of all account balances + recurring adjustment for current month
-            var currentRawBalance = activeAccounts.Sum(a => a.Balance);
-            var currentRecurringAdj = CalculateRecurringAdjustment(
-                activeRecurring, activeAccounts, archivedIds, today.Year, today.Month);
-            var currentBalance = currentRawBalance + currentRecurringAdj;
-
-            // 5. Build cumulative delta from today backwards
-            // For each day, we accumulate what changed AFTER that day to subtract from currentBalance
-            // Group transactions by date
-            var deltaByDate = new Dictionary<DateOnly, decimal>();
-            foreach (var tx in transactions)
+            // 6. Build cumulative transaction effects per account up to each day (forward approach)
+            // Group all range transactions by (date, accountId), handling transfers
+            var txByDateAccount = new Dictionary<(DateOnly, Guid), decimal>();
+            foreach (var tx in rangeTransactions)
             {
                 var d = DateOnly.FromDateTime(tx.Date);
-                var amount = tx.Type == TransactionType.Income ? tx.Amount
-                           : tx.Type == TransactionType.Expense ? -tx.Amount
-                           : 0m; // transfers are net-zero for total patrimônio
-                if (deltaByDate.ContainsKey(d))
-                    deltaByDate[d] += amount;
+                if (tx.Type == TransactionType.Transfer)
+                {
+                    var srcKey = (d, tx.AccountId);
+                    txByDateAccount[srcKey] = txByDateAccount.GetValueOrDefault(srcKey) - tx.Amount;
+                    if (tx.DestinationAccountId.HasValue)
+                    {
+                        var dstKey = (d, tx.DestinationAccountId.Value);
+                        txByDateAccount[dstKey] = txByDateAccount.GetValueOrDefault(dstKey) + tx.Amount;
+                    }
+                }
                 else
-                    deltaByDate[d] = amount;
+                {
+                    var delta = tx.Type == TransactionType.Income ? tx.Amount : -tx.Amount;
+                    var key = (d, tx.AccountId);
+                    txByDateAccount[key] = txByDateAccount.GetValueOrDefault(key) + delta;
+                }
             }
 
-            // 6. Build daily balance array
-            var points = new List<object>();
-            var cumulativeDeltaAfter = 0m; // accumulates deltas from days AFTER current iteration day
-            var prevMonthKey = (today.Year, today.Month);
-
-            for (var d = today; d >= from; d = d.AddDays(-1))
+            // 7. For transactions BEFORE the chart range, compute their cumulative effect per account
+            var priorTxByAccount = new Dictionary<Guid, decimal>();
+            foreach (var tx in allTransactions)
             {
-                var monthKey = (d.Year, d.Month);
-
-                // Calculate recurring difference if we crossed into a different month
-                decimal recurringAdj;
-                if (monthKey == (today.Year, today.Month))
+                if (tx.Date >= fromDt) continue; // already in range
+                if (tx.Type == TransactionType.Transfer)
                 {
-                    recurringAdj = currentRecurringAdj;
+                    priorTxByAccount[tx.AccountId] = priorTxByAccount.GetValueOrDefault(tx.AccountId) - tx.Amount;
+                    if (tx.DestinationAccountId.HasValue)
+                        priorTxByAccount[tx.DestinationAccountId.Value] = priorTxByAccount.GetValueOrDefault(tx.DestinationAccountId.Value) + tx.Amount;
                 }
                 else
                 {
-                    recurringAdj = CalculateRecurringAdjustment(
-                        activeRecurring, activeAccounts, archivedIds, d.Year, d.Month);
+                    var delta = tx.Type == TransactionType.Income ? tx.Amount : -tx.Amount;
+                    priorTxByAccount[tx.AccountId] = priorTxByAccount.GetValueOrDefault(tx.AccountId) + delta;
+                }
+            }
+
+            // 8. Build daily balance going forward
+            // For each day d, balance = sum over active accounts of:
+            //   if account existed on d: initialBalance + priorTxs + cumulativeTxs up to d
+            //   else: 0
+            // Plus recurring adjustment (only for accounts that existed on that day)
+            var accountCreationDates = accountInitialBalances.ToDictionary(a => a.Id, a => a.CreatedDate);
+
+            var points = new List<object>();
+            // Running cumulative tx per account (within chart range)
+            var runningTxByAccount = new Dictionary<Guid, decimal>();
+
+            for (var d = from; d <= today; d = d.AddDays(1))
+            {
+                // Add this day's transactions to running totals
+                foreach (var acc in accountInitialBalances)
+                {
+                    var key = (d, acc.Id);
+                    if (txByDateAccount.TryGetValue(key, out var dayDelta))
+                        runningTxByAccount[acc.Id] = runningTxByAccount.GetValueOrDefault(acc.Id) + dayDelta;
                 }
 
-                var balance = currentRawBalance + recurringAdj - cumulativeDeltaAfter;
+                // Calculate balance: sum of each account's contribution
+                var balance = 0m;
+                foreach (var acc in accountInitialBalances)
+                {
+                    if (d < acc.CreatedDate) continue; // account didn't exist yet
+                    balance += acc.InitialBalance
+                             + priorTxByAccount.GetValueOrDefault(acc.Id)
+                             + runningTxByAccount.GetValueOrDefault(acc.Id);
+                }
+
+                // Add recurring adjustment ONLY for the current month (projection)
+                // Past months use only real transaction data — recurring effects either
+                // already became real transactions or didn't happen
+                if ((d.Year, d.Month) == (today.Year, today.Month))
+                {
+                    var existingAccounts = activeAccounts
+                        .Where(a => accountCreationDates.TryGetValue(a.Id, out var created) &&
+                                    (created.Year < d.Year || (created.Year == d.Year && created.Month <= d.Month)))
+                        .ToList();
+                    var recurringAdj = CalculateRecurringAdjustment(
+                        activeRecurring, existingAccounts, archivedIds, d.Year, d.Month);
+                    balance += recurringAdj;
+                }
 
                 points.Add(new { date = d.ToString("yyyy-MM-dd"), balance = Math.Round(balance, 2) });
-
-                // Add this day's delta to cumulative (for the next earlier day)
-                if (deltaByDate.TryGetValue(d, out var dayDelta))
-                    cumulativeDeltaAfter += dayDelta;
-            }
-
-            points.Reverse(); // chronological order
-
-            // Days before the first-ever transaction: set balance to 0
-            // (the app had no data before that — the user hadn't started tracking yet)
-            var earliestTx = await _dashboardRepository.GetEarliestTransactionDateAsync(
-                householdId.Value, cancellationToken);
-            if (earliestTx.HasValue)
-            {
-                var earliestDate = DateOnly.FromDateTime(earliestTx.Value);
-                if (earliestDate > from)
-                {
-                    points = points
-                        .Cast<dynamic>()
-                        .Select(p => DateOnly.Parse((string)p.date) < earliestDate
-                            ? (object)new { date = (string)p.date, balance = 0m }
-                            : (object)p)
-                        .ToList();
-                }
             }
 
             return Ok(new { points, currency = activeAccounts.FirstOrDefault()?.Currency ?? "EUR" });
