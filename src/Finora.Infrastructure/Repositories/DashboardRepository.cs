@@ -335,15 +335,19 @@ public class DashboardRepository : IDashboardRepository
 
     private async Task<IReadOnlyList<AccountBalanceAtDate>> GetAccountBalancesAtDateAsync(Guid householdId, DateTime firstDayAfterPeriod, CancellationToken cancellationToken = default)
     {
+        // Only include accounts that existed before the period end
         var accounts = await _context.Accounts
             .AsNoTracking()
-            .Where(a => a.HouseholdId == householdId && !a.IsArchived)
+            .Where(a => a.HouseholdId == householdId && !a.IsArchived && a.CreatedAt < firstDayAfterPeriod)
             .Select(a => new { a.Id, a.Name, a.Type, a.Currency, a.Balance })
             .ToListAsync(cancellationToken);
 
-        var deltaByAccount = await _context.Transactions
+        var accountIds = accounts.Select(a => a.Id).ToHashSet();
+
+        // Source-side deltas: Income = +Amount, Expense/Transfer = -Amount
+        var sourceDeltaByAccount = await _context.Transactions
             .AsNoTracking()
-            .Where(t => t.HouseholdId == householdId && t.Date >= firstDayAfterPeriod)
+            .Where(t => t.HouseholdId == householdId && t.Date >= firstDayAfterPeriod && accountIds.Contains(t.AccountId))
             .GroupBy(t => t.AccountId)
             .Select(g => new
             {
@@ -352,7 +356,26 @@ public class DashboardRepository : IDashboardRepository
             })
             .ToListAsync(cancellationToken);
 
-        var deltaDict = deltaByAccount.ToDictionary(x => x.AccountId, x => x.Delta);
+        // Destination-side deltas for transfers (destination gains money)
+        var destDeltaByAccount = await _context.Transactions
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId && t.Date >= firstDayAfterPeriod
+                        && t.Type == TransactionType.Transfer
+                        && t.DestinationAccountId != null
+                        && accountIds.Contains(t.DestinationAccountId!.Value))
+            .GroupBy(t => t.DestinationAccountId!.Value)
+            .Select(g => new
+            {
+                AccountId = g.Key,
+                Delta = g.Sum(t => t.Amount)
+            })
+            .ToListAsync(cancellationToken);
+
+        var deltaDict = new Dictionary<Guid, decimal>();
+        foreach (var d in sourceDeltaByAccount)
+            deltaDict[d.AccountId] = deltaDict.GetValueOrDefault(d.AccountId) + d.Delta;
+        foreach (var d in destDeltaByAccount)
+            deltaDict[d.AccountId] = deltaDict.GetValueOrDefault(d.AccountId) + d.Delta;
 
         return accounts.Select(a =>
         {
