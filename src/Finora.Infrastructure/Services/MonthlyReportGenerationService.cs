@@ -149,7 +149,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
             actingUserId,
             year,
             month,
-            trendMonths: 6,
+            trendMonths: 120,
             cancellationToken);
 
         // Filter data to only include information up to the report month
@@ -206,7 +206,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
             actingUserId,
             report.Year,
             report.Month,
-            trendMonths: 6,
+            trendMonths: 120,
             cancellationToken);
 
         dashboard = CapDashboardToMonth(dashboard, report.Year, report.Month);
@@ -299,6 +299,8 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         var trendLabels = d.MonthlyTrend.Select(x => x.Label).ToList();
         var trendIncome = d.MonthlyTrend.Select(x => (double)x.Income).ToList();
         var trendExpenses = d.MonthlyTrend.Select(x => (double)x.Expenses).ToList();
+        var trendYears = d.MonthlyTrend.Select(x => x.Year).ToList();
+        var trendMonthNums = d.MonthlyTrend.Select(x => x.Month).ToList();
 
         const string arrowUp = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"17 11 12 6 7 11\"/><line x1=\"12\" x2=\"12\" y1=\"6\" y2=\"18\"/></svg>";
         const string arrowDown = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"7 13 12 18 17 13\"/><line x1=\"12\" x2=\"12\" y1=\"18\" y2=\"6\"/></svg>";
@@ -438,10 +440,25 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         var ti = JsonSerializer.Serialize(trendIncome, JsonHtmlSafe);
         var te = JsonSerializer.Serialize(trendExpenses, JsonHtmlSafe);
 
+        var ty = JsonSerializer.Serialize(trendYears, JsonHtmlSafe);
+        var tm = JsonSerializer.Serialize(trendMonthNums, JsonHtmlSafe);
+
         sb.AppendLine("<script>");
         sb.AppendLine($"const expenseLabels={el};const expenseData={ed};");
         sb.AppendLine($"const incomeLabels={il};const incomeData={ida};");
-        sb.AppendLine($"const trendLabels={tl};const trendIncome={ti};const trendExpenses={te};");
+        sb.AppendLine($"const rawTrendLabels={tl};const rawTrendIncome={ti};const rawTrendExpenses={te};");
+        sb.AppendLine($"const trendYears={ty};const trendMonthNums={tm};");
+        // Smart aggregation: if >12 data points, group complete past years into single entries
+        sb.AppendLine("function aggregateTrend(labels,income,expenses,years,months){");
+        sb.AppendLine("  if(labels.length<=12) return {labels,income,expenses};");
+        sb.AppendLine("  const lastYear=years[years.length-1];");
+        sb.AppendLine("  const yearSet=[...new Set(years.filter(y=>y<lastYear))];");
+        sb.AppendLine("  const aLabels=[],aIncome=[],aExpenses=[];");
+        sb.AppendLine("  yearSet.forEach(yr=>{let si=0,se=0;for(let i=0;i<labels.length;i++){if(years[i]===yr){si+=income[i];se+=expenses[i];}}aLabels.push(String(yr));aIncome.push(si);aExpenses.push(se);});");
+        sb.AppendLine("  for(let i=0;i<labels.length;i++){if(years[i]===lastYear){aLabels.push(labels[i]);aIncome.push(income[i]);aExpenses.push(expenses[i]);}}");
+        sb.AppendLine("  return {labels:aLabels,income:aIncome,expenses:aExpenses};}");
+        sb.AppendLine("const _agg=aggregateTrend(rawTrendLabels,rawTrendIncome,rawTrendExpenses,trendYears,trendMonthNums);");
+        sb.AppendLine("const trendLabels=_agg.labels;const trendIncome=_agg.income;const trendExpenses=_agg.expenses;");
         sb.AppendLine("const palette=['#2563eb','#16a34a','#dc2626','#ca8a04','#9333ea','#0891b2','#ea580c','#4f46e5'];");
 
         // Pie chart
