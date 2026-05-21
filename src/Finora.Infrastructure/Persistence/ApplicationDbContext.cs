@@ -23,6 +23,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<CoupleInvitation> CoupleInvitations => Set<CoupleInvitation>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<MonthlyBudget> MonthlyBudgets => Set<MonthlyBudget>();
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -203,6 +204,27 @@ public class ApplicationDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Type).HasConversion<int>();
+            entity.Property(e => e.Message).HasMaxLength(500);
+            entity.Property(e => e.RedirectUrl).HasMaxLength(300);
+            entity.Property(e => e.DeduplicationKey).HasMaxLength(200);
+            entity.HasIndex(e => new { e.HouseholdId, e.IsRead, e.CreatedAt });
+            entity.HasIndex(e => e.DeduplicationKey).IsUnique().HasFilter("\"DeduplicationKey\" IS NOT NULL");
+
+            entity.HasOne(e => e.Household)
+                .WithMany()
+                .HasForeignKey(e => e.HouseholdId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<CoupleInvitation>(entity =>

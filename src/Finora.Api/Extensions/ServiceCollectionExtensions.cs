@@ -48,6 +48,8 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient<IFileStorageService, SupabaseStorageService>();
         services.AddScoped<ICoupleInvitationRepository, CoupleInvitationRepository>();
         services.AddScoped<ICoupleInvitationService, CoupleInvitationService>();
+        services.AddScoped<INotificationRepository, NotificationRepository>();
+        services.AddScoped<INotificationGenerationService, NotificationGenerationService>();
         return services;
     }
 

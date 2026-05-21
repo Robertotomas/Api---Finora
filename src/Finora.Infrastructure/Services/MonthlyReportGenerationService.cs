@@ -67,10 +67,11 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
             var tz = ResolveTimeZone(anchorUser.TimeZoneId);
             var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
 
-            // Check all past months since the household was created
-            var createdAt = anchorUser.CreatedAt;
-            var startYear = createdAt.Year;
-            var startMonth = createdAt.Month;
+            // Only generate reports from the month the paid plan started
+            var planStart = await _subscriptionService.GetPaidPlanStartDateAsync(householdId, cancellationToken);
+            var startDate = planStart ?? anchorUser.CreatedAt;
+            var startYear = startDate.Year;
+            var startMonth = startDate.Month;
 
             // Iterate from the month after creation up to last month
             var currentYear = localNow.Year;

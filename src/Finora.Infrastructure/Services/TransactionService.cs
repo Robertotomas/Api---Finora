@@ -2,6 +2,8 @@ using Finora.Application.DTOs.Transaction;
 using Finora.Application.Interfaces;
 using Finora.Domain.Entities;
 using Finora.Domain.Enums;
+using Finora.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Finora.Infrastructure.Services;
 
@@ -10,15 +12,27 @@ public class TransactionService : ITransactionService
     private readonly ITransactionRepository _transactionRepository;
     private readonly IAccountRepository _accountRepository;
     private readonly IUserRepository _userRepository;
+    private readonly INotificationRepository _notificationRepository;
+    private readonly ApplicationDbContext _db;
+
+    private static readonly string[] MonthNames =
+    {
+        "", "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+        "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+    };
 
     public TransactionService(
         ITransactionRepository transactionRepository,
         IAccountRepository accountRepository,
-        IUserRepository userRepository)
+        IUserRepository userRepository,
+        INotificationRepository notificationRepository,
+        ApplicationDbContext db)
     {
         _transactionRepository = transactionRepository;
         _accountRepository = accountRepository;
         _userRepository = userRepository;
+        _notificationRepository = notificationRepository;
+        _db = db;
     }
 
     public async Task<IReadOnlyList<TransactionDto>> GetByHouseholdAsync(Guid householdId, Guid userId, Guid? accountId, DateTime? from, DateTime? to, int? limit = null, CancellationToken cancellationToken = default)
@@ -110,6 +124,9 @@ public class TransactionService : ITransactionService
             await _accountRepository.UpdateAsync(account, cancellationToken);
         }
 
+        if (request.Type == TransactionType.Expense)
+            await CheckBudgetExceededAsync(householdId, transaction.Date, cancellationToken);
+
         return ToDto(transaction);
     }
 
@@ -146,6 +163,7 @@ public class TransactionService : ITransactionService
         var oldType = transaction.Type;
         var oldAmount = transaction.Amount;
         var oldDestAccountId = transaction.DestinationAccountId;
+        var oldDate = transaction.Date;
 
         transaction.AccountId = request.AccountId;
         transaction.Type = request.Type;
@@ -169,6 +187,12 @@ public class TransactionService : ITransactionService
         await ApplyBalanceEffects(request.AccountId, request.Type, request.Amount,
             request.Type == TransactionType.Transfer ? request.DestinationAccountId : null, cancellationToken);
 
+        // Check budget notifications for affected months
+        if (request.Type == TransactionType.Expense)
+            await CheckBudgetExceededAsync(transaction.HouseholdId, transaction.Date, cancellationToken);
+        if (oldType == TransactionType.Expense)
+            await ClearBudgetExceededIfBelowAsync(transaction.HouseholdId, oldDate, cancellationToken);
+
         return ToDto(transaction);
     }
 
@@ -184,7 +208,15 @@ public class TransactionService : ITransactionService
         await RevertBalanceEffects(transaction.AccountId, transaction.Type, transaction.Amount,
             transaction.DestinationAccountId, cancellationToken);
 
+        var wasExpense = transaction.Type == TransactionType.Expense;
+        var txDate = transaction.Date;
+        var txHouseholdId = transaction.HouseholdId;
+
         await _transactionRepository.DeleteAsync(transaction, cancellationToken);
+
+        if (wasExpense)
+            await ClearBudgetExceededIfBelowAsync(txHouseholdId, txDate, cancellationToken);
+
         return true;
     }
 
@@ -265,6 +297,73 @@ public class TransactionService : ITransactionService
         }
 
         return splits;
+    }
+
+    private async Task CheckBudgetExceededAsync(Guid householdId, DateTime transactionDate, CancellationToken ct)
+    {
+        var year = transactionDate.Year;
+        var month = transactionDate.Month;
+
+        var budget = await _db.MonthlyBudgets
+            .AsNoTracking()
+            .FirstOrDefaultAsync(b => b.HouseholdId == householdId && b.Year == year && b.Month == month, ct);
+
+        if (budget == null || budget.ExpectedExpenses <= 0)
+            return;
+
+        var dedupKey = $"budget-exceeded:{householdId}:{year}:{month}";
+        if (await _notificationRepository.ExistsByDeduplicationKeyAsync(dedupKey, ct))
+            return;
+
+        var totalExpenses = await _db.Transactions
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId
+                && t.Type == TransactionType.Expense
+                && t.Date.Year == year
+                && t.Date.Month == month)
+            .SumAsync(t => t.Amount, ct);
+
+        if (totalExpenses <= budget.ExpectedExpenses)
+            return;
+
+        await _notificationRepository.AddAsync(new Notification
+        {
+            Id = Guid.NewGuid(),
+            HouseholdId = householdId,
+            Type = NotificationType.BudgetExceeded,
+            Message = $"As despesas de {MonthNames[month]} ultrapassaram o orçamento de {budget.ExpectedExpenses:N2}€.",
+            RedirectUrl = "/movimentos?tab=dashboard",
+            DeduplicationKey = dedupKey,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+    }
+
+    private async Task ClearBudgetExceededIfBelowAsync(Guid householdId, DateTime transactionDate, CancellationToken ct)
+    {
+        var year = transactionDate.Year;
+        var month = transactionDate.Month;
+
+        var dedupKey = $"budget-exceeded:{householdId}:{year}:{month}";
+        if (!await _notificationRepository.ExistsByDeduplicationKeyAsync(dedupKey, ct))
+            return;
+
+        var budget = await _db.MonthlyBudgets
+            .AsNoTracking()
+            .FirstOrDefaultAsync(b => b.HouseholdId == householdId && b.Year == year && b.Month == month, ct);
+
+        if (budget == null || budget.ExpectedExpenses <= 0)
+            return;
+
+        var totalExpenses = await _db.Transactions
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId
+                && t.Type == TransactionType.Expense
+                && t.Date.Year == year
+                && t.Date.Month == month)
+            .SumAsync(t => t.Amount, ct);
+
+        if (totalExpenses <= budget.ExpectedExpenses)
+            await _notificationRepository.DeleteByDeduplicationKeyAsync(dedupKey, ct);
     }
 
     private static TransactionDto ToDto(Transaction t)

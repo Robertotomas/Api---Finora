@@ -1,6 +1,8 @@
 using Finora.Application.Interfaces;
 using Finora.Domain.Entities;
 using Finora.Domain.Enums;
+using Finora.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Finora.Infrastructure.Services;
 
@@ -11,19 +13,25 @@ public class SubscriptionService : ISubscriptionService
     private readonly IAccountRepository _accountRepository;
     private readonly ITransactionRepository _transactionRepository;
     private readonly IRecurringTransactionRepository _recurringTransactionRepository;
+    private readonly INotificationRepository _notificationRepository;
+    private readonly ApplicationDbContext _db;
 
     public SubscriptionService(
         ISubscriptionRepository subscriptionRepository,
         IHouseholdRepository householdRepository,
         IAccountRepository accountRepository,
         ITransactionRepository transactionRepository,
-        IRecurringTransactionRepository recurringTransactionRepository)
+        IRecurringTransactionRepository recurringTransactionRepository,
+        INotificationRepository notificationRepository,
+        ApplicationDbContext db)
     {
         _subscriptionRepository = subscriptionRepository;
         _householdRepository = householdRepository;
         _accountRepository = accountRepository;
         _transactionRepository = transactionRepository;
         _recurringTransactionRepository = recurringTransactionRepository;
+        _notificationRepository = notificationRepository;
+        _db = db;
     }
 
     public async Task<SubscriptionPlan?> GetActivePlanAsync(Guid householdId, CancellationToken cancellationToken = default)
@@ -86,9 +94,52 @@ public class SubscriptionService : ISubscriptionService
     public Task<bool> CanAccessMonthlyReportsAsync(Guid householdId, CancellationToken cancellationToken = default)
         => CanAccessObjectivesAsync(householdId, cancellationToken);
 
+    public async Task<DateTime?> GetPaidPlanStartDateAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        var active = await _subscriptionRepository.GetActiveByHouseholdIdAsync(householdId, cancellationToken);
+        if (active == null || active.Plan == SubscriptionPlan.Free)
+            return null;
+        return active.StartedAt;
+    }
+
     public async Task UpgradeAsync(Guid householdId, SubscriptionPlan plan, CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
+
+        // Cancel previous active subscription
+        var previous = await _subscriptionRepository.GetActiveByHouseholdIdAsync(householdId, cancellationToken);
+        if (previous != null)
+        {
+            await _db.Subscriptions
+                .Where(s => s.Id == previous.Id)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(x => x.Status, SubscriptionStatus.Cancelled)
+                    .SetProperty(x => x.UpdatedAt, now), cancellationToken);
+
+            // Notify if downgrading from Pro to Free (Couple handled in LeaveCoupleHouseholdAsync)
+            if (previous.Plan == SubscriptionPlan.Pro && plan == SubscriptionPlan.Free)
+            {
+                var dedupKey = $"sub-expired:{householdId}:{previous.Id}";
+
+                if (!await _notificationRepository.ExistsByDeduplicationKeyAsync(dedupKey, cancellationToken))
+                {
+                    await _notificationRepository.AddAsync(new Notification
+                    {
+                        Id = Guid.NewGuid(),
+                        HouseholdId = householdId,
+                        Type = NotificationType.SubscriptionExpired,
+                        Message = "O teu plano Pro foi cancelado. Renova para manter acesso completo.",
+                        RedirectUrl = "/subscricao",
+                        DeduplicationKey = dedupKey,
+                        CreatedAt = now
+                    }, cancellationToken);
+                }
+            }
+        }
+
+        // Don't create a subscription row for Free — absence of active = Free
+        if (plan == SubscriptionPlan.Free)
+            return;
 
         await _subscriptionRepository.CreateAsync(new Subscription
         {

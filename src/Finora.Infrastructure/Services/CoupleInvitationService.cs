@@ -23,6 +23,7 @@ public class CoupleInvitationService : ICoupleInvitationService
     private readonly IRecurringTransactionRepository _recurringTransactionRepository;
     private readonly ISavingsObjectiveRepository _savingsObjectiveRepository;
     private readonly IMonthlyReportRepository _monthlyReportRepository;
+    private readonly INotificationRepository _notificationRepository;
     private readonly IEmailService _emailService;
     private readonly AppOptions _appOptions;
     private readonly ApplicationDbContext _db;
@@ -37,6 +38,7 @@ public class CoupleInvitationService : ICoupleInvitationService
         IRecurringTransactionRepository recurringTransactionRepository,
         ISavingsObjectiveRepository savingsObjectiveRepository,
         IMonthlyReportRepository monthlyReportRepository,
+        INotificationRepository notificationRepository,
         IEmailService emailService,
         IOptions<AppOptions> appOptions,
         ApplicationDbContext db)
@@ -50,6 +52,7 @@ public class CoupleInvitationService : ICoupleInvitationService
         _recurringTransactionRepository = recurringTransactionRepository;
         _savingsObjectiveRepository = savingsObjectiveRepository;
         _monthlyReportRepository = monthlyReportRepository;
+        _notificationRepository = notificationRepository;
         _emailService = emailService;
         _appOptions = appOptions.Value;
         _db = db;
@@ -232,6 +235,10 @@ public class CoupleInvitationService : ICoupleInvitationService
         }
 
         await _invitationRepository.SaveChangesAsync(cancellationToken);
+
+        var invitee = await _userRepository.GetByEmailAsync(inv.InviteeEmail, cancellationToken);
+        await CreateCoupleAcceptedNotificationAsync(inv.Id, inv.InviterHouseholdId, inv.InviterUserId, inv.InviteeEmail, cancellationToken);
+        await CreateCoupleJoinedNotificationAsync(inv.Id, inv.InviterHouseholdId, inv.InviterUserId, invitee?.Id, cancellationToken);
     }
 
     public async Task VerifyOtpAndJoinAsync(Guid userId, string otpCode, bool migratePersonalData, CancellationToken cancellationToken = default)
@@ -306,6 +313,59 @@ public class CoupleInvitationService : ICoupleInvitationService
                     await _householdRepository.DeleteAsync(oldH, cancellationToken);
             }
         }
+
+        await CreateCoupleAcceptedNotificationAsync(inv.Id, inv.InviterHouseholdId, inv.InviterUserId, user.Email, cancellationToken);
+        await CreateCoupleJoinedNotificationAsync(inv.Id, inv.InviterHouseholdId, inv.InviterUserId, userId, cancellationToken);
+    }
+
+    private async Task CreateCoupleAcceptedNotificationAsync(Guid invitationId, Guid householdId, Guid inviterUserId, string inviteeEmail, CancellationToken ct)
+    {
+        var dedupKey = $"couple-accepted:{invitationId}";
+        if (await _notificationRepository.ExistsByDeduplicationKeyAsync(dedupKey, ct))
+            return;
+
+        var invitee = await _userRepository.GetByEmailAsync(inviteeEmail, ct);
+        var name = invitee != null
+            ? $"{invitee.FirstName} {invitee.LastName}".Trim()
+            : inviteeEmail;
+        if (string.IsNullOrEmpty(name)) name = inviteeEmail;
+
+        await _notificationRepository.AddAsync(new Notification
+        {
+            Id = Guid.NewGuid(),
+            HouseholdId = householdId,
+            UserId = inviterUserId,
+            Type = NotificationType.CoupleInviteAccepted,
+            Message = $"{name} aceitou o convite e juntou-se ao agregado!",
+            RedirectUrl = "/agregado",
+            DeduplicationKey = dedupKey,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+    }
+
+    private async Task CreateCoupleJoinedNotificationAsync(Guid invitationId, Guid householdId, Guid inviterUserId, Guid? inviteeUserId, CancellationToken ct)
+    {
+        var dedupKey = $"couple-joined:{invitationId}";
+        if (await _notificationRepository.ExistsByDeduplicationKeyAsync(dedupKey, ct))
+            return;
+
+        var inviter = await _userRepository.GetByIdAsync(inviterUserId, ct);
+        var name = inviter != null
+            ? $"{inviter.FirstName} {inviter.LastName}".Trim()
+            : "o teu parceiro";
+        if (string.IsNullOrEmpty(name)) name = "o teu parceiro";
+
+        await _notificationRepository.AddAsync(new Notification
+        {
+            Id = Guid.NewGuid(),
+            HouseholdId = householdId,
+            UserId = inviteeUserId,
+            Type = NotificationType.CoupleInviteAccepted,
+            Message = $"Juntaste-te ao agregado de {name}!",
+            RedirectUrl = "/agregado",
+            DeduplicationKey = dedupKey,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
     }
 
     private async Task<bool> HasPersonalHouseholdDataAsync(Guid householdId, CancellationToken cancellationToken)

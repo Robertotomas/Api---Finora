@@ -9,6 +9,7 @@ public interface ISubscriptionService
     Task<bool> CanAddTransactionAsync(Guid householdId, TransactionType type, int year, int month, CancellationToken cancellationToken = default);
     Task<bool> CanAccessObjectivesAsync(Guid householdId, CancellationToken cancellationToken = default);
     Task<bool> CanAccessMonthlyReportsAsync(Guid householdId, CancellationToken cancellationToken = default);
+    Task<DateTime?> GetPaidPlanStartDateAsync(Guid householdId, CancellationToken cancellationToken = default);
     Task UpgradeAsync(Guid householdId, SubscriptionPlan plan, CancellationToken cancellationToken = default);
 
     /// <summary>Free plan with 2+ accounts: whether a primary must be chosen, and the current primary if any.</summary>
