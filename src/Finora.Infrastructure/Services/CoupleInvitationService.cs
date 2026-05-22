@@ -281,7 +281,7 @@ public class CoupleInvitationService : ICoupleInvitationService
         }
         else
         {
-            await EnsureInviteeHouseholdIsEmptyAsync(userId, cancellationToken);
+            await DeletePersonalHouseholdDataAsync(oldHouseholdId, cancellationToken);
             user.CoupleJoinDataMigrated = false;
         }
 
@@ -441,41 +441,46 @@ public class CoupleInvitationService : ICoupleInvitationService
                 .SetProperty(o => o.UpdatedAt, utc), cancellationToken);
     }
 
-    private async Task EnsureInviteeHouseholdIsEmptyAsync(Guid userId, CancellationToken cancellationToken)
+    private async Task DeletePersonalHouseholdDataAsync(Guid householdId, CancellationToken cancellationToken)
     {
-        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
-        if (user?.HouseholdId == null)
-            return;
+        var utc = DateTime.UtcNow;
 
-        var hid = user.HouseholdId.Value;
-        var members = await _userRepository.GetByHouseholdIdAsync(hid, cancellationToken);
-        if (members.Count != 1)
-            throw new InvalidOperationException(
-                "Só podes aceitar o convite se fores o único membro do teu agregado atual.");
+        // Remove PrimaryAccountId FK before deleting accounts
+        var household = await _db.Households.FirstOrDefaultAsync(h => h.Id == householdId, cancellationToken);
+        if (household != null)
+        {
+            household.PrimaryAccountId = null;
+            household.UpdatedAt = utc;
+            await _db.SaveChangesAsync(cancellationToken);
+        }
 
-        var accounts = await _accountRepository.GetByHouseholdIdAsync(hid, cancellationToken);
-        if (accounts.Count > 0)
-            throw new InvalidOperationException(
-                "Remove as contas do teu agregado atual antes de aceitar o convite (ou exporta os dados).");
+        // Delete all household data
+        await _db.Transactions
+            .Where(t => t.HouseholdId == householdId)
+            .ExecuteDeleteAsync(cancellationToken);
 
-        var transactions = await _transactionRepository.GetByHouseholdAsync(hid, null, null, null, limit: 1, cancellationToken);
-        if (transactions.Count > 0)
-            throw new InvalidOperationException(
-                "O teu agregado atual tem movimentos. Remove-os ou exporta antes de aceitar o convite.");
+        await _db.RecurringTransactions
+            .Where(rt => rt.HouseholdId == householdId)
+            .ExecuteDeleteAsync(cancellationToken);
 
-        var recurring = await _recurringTransactionRepository.GetByHouseholdAsync(hid, cancellationToken);
-        if (recurring.Count > 0)
-            throw new InvalidOperationException(
-                "O teu agregado atual tem recorrentes. Remove-as antes de aceitar o convite.");
+        await _db.Accounts
+            .Where(a => a.HouseholdId == householdId)
+            .ExecuteDeleteAsync(cancellationToken);
 
-        var objectives = await _savingsObjectiveRepository.GetByHouseholdAsync(hid, cancellationToken);
-        if (objectives.Count > 0)
-            throw new InvalidOperationException(
-                "O teu agregado atual tem objetivos de poupança. Remove-os antes de aceitar o convite.");
+        await _db.SavingsObjectives
+            .Where(o => o.HouseholdId == householdId)
+            .ExecuteDeleteAsync(cancellationToken);
 
-        var reports = await _monthlyReportRepository.ListByHouseholdAsync(hid, null, null, cancellationToken);
-        if (reports.Count > 0)
-            throw new InvalidOperationException(
-                "O teu agregado atual tem relatórios. Contacta o suporte se precisares de os migrar.");
+        await _db.MonthlyReports
+            .Where(r => r.HouseholdId == householdId)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        await _db.MonthlyBudgets
+            .Where(b => b.HouseholdId == householdId)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        await _db.Notifications
+            .Where(n => n.HouseholdId == householdId)
+            .ExecuteDeleteAsync(cancellationToken);
     }
 }
