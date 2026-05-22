@@ -28,4 +28,8 @@ public record RegisterRequest
 
     /// <summary>Optional invite token from email (Couple plan new-account flow).</summary>
     public string? InviteToken { get; init; }
+
+    /// <summary>IANA timezone detected by the browser (e.g. Europe/Lisbon).</summary>
+    [MaxLength(100)]
+    public string? TimeZoneId { get; init; }
 }

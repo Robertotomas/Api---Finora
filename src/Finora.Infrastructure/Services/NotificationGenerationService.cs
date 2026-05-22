@@ -11,6 +11,7 @@ public class NotificationGenerationService : INotificationGenerationService
 {
     private readonly ApplicationDbContext _db;
     private readonly INotificationRepository _notificationRepo;
+    private readonly IUserRepository _userRepo;
     private readonly ISubscriptionService _subscriptionService;
     private readonly ILogger<NotificationGenerationService> _logger;
 
@@ -23,11 +24,13 @@ public class NotificationGenerationService : INotificationGenerationService
     public NotificationGenerationService(
         ApplicationDbContext db,
         INotificationRepository notificationRepo,
+        IUserRepository userRepo,
         ISubscriptionService subscriptionService,
         ILogger<NotificationGenerationService> logger)
     {
         _db = db;
         _notificationRepo = notificationRepo;
+        _userRepo = userRepo;
         _subscriptionService = subscriptionService;
         _logger = logger;
     }
@@ -39,21 +42,45 @@ public class NotificationGenerationService : INotificationGenerationService
             .Select(h => h.Id)
             .ToListAsync(cancellationToken);
 
-        var now = DateTime.UtcNow;
-
         foreach (var hid in householdIds)
         {
             try
             {
-                await CheckBudgetExceededAsync(hid, now, cancellationToken);
-                await CheckMonthCloseAsync(hid, now, cancellationToken);
-                await CheckMonthlyPlanReminderAsync(hid, now, cancellationToken);
-                await CheckSubscriptionExpiredAsync(hid, now, cancellationToken);
+                var localNow = await ResolveLocalNowAsync(hid, cancellationToken);
+
+                await CheckBudgetExceededAsync(hid, localNow, cancellationToken);
+                await CheckMonthCloseAsync(hid, localNow, cancellationToken);
+                await CheckMonthlyPlanReminderAsync(hid, localNow, cancellationToken);
+                await CheckSubscriptionExpiredAsync(hid, DateTime.UtcNow, cancellationToken);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Notification generation failed for household {HouseholdId}.", hid);
             }
+        }
+    }
+
+    private async Task<DateTime> ResolveLocalNowAsync(Guid householdId, CancellationToken ct)
+    {
+        var users = await _userRepo.GetByHouseholdIdAsync(householdId, ct);
+        if (users.Count == 0) return DateTime.UtcNow;
+
+        var anchorUser = users.OrderBy(u => u.CreatedAt).First();
+        var tz = ResolveTimeZone(anchorUser.TimeZoneId);
+        return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+    }
+
+    private static TimeZoneInfo ResolveTimeZone(string? timeZoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timeZoneId))
+            return TimeZoneInfo.Utc;
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId.Trim());
+        }
+        catch
+        {
+            return TimeZoneInfo.Utc;
         }
     }
 

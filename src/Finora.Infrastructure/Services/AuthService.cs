@@ -64,6 +64,7 @@ public class AuthService : IAuthService
                 FirstName = request.FirstName.Trim(),
                 LastName = request.LastName.Trim(),
                 Gender = request.Gender,
+                TimeZoneId = NormalizeTimeZone(request.TimeZoneId),
                 HouseholdId = ctx.TargetHouseholdId,
                 IsCoupleGuest = true,
                 CoupleJoinDataMigrated = null,
@@ -106,6 +107,7 @@ public class AuthService : IAuthService
             FirstName = request.FirstName.Trim(),
             LastName = request.LastName.Trim(),
             Gender = request.Gender,
+            TimeZoneId = NormalizeTimeZone(request.TimeZoneId),
             HouseholdId = household.Id,
             CreatedAt = DateTime.UtcNow
         };
@@ -146,12 +148,25 @@ public class AuthService : IAuthService
         }
 
         // Reset on success
+        var needsSave = false;
         if (user.FailedLoginAttempts > 0 || user.LockedUntil.HasValue)
         {
             user.FailedLoginAttempts = 0;
             user.LockedUntil = null;
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            needsSave = true;
         }
+
+        // Update timezone from browser on each login
+        var tz = NormalizeTimeZone(request.TimeZoneId);
+        if (tz != null && tz != user.TimeZoneId)
+        {
+            user.TimeZoneId = tz;
+            user.UpdatedAt = DateTime.UtcNow;
+            needsSave = true;
+        }
+
+        if (needsSave)
+            await _dbContext.SaveChangesAsync(cancellationToken);
 
         return await GenerateAuthResponseAsync(user, cancellationToken);
     }
@@ -287,5 +302,21 @@ public class AuthService : IAuthService
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
         return Convert.ToHexStringLower(bytes);
+    }
+
+    /// <summary>Validates the IANA timezone id; returns null if invalid/empty.</summary>
+    private static string? NormalizeTimeZone(string? timeZoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timeZoneId)) return null;
+        var trimmed = timeZoneId.Trim();
+        try
+        {
+            TimeZoneInfo.FindSystemTimeZoneById(trimmed);
+            return trimmed;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

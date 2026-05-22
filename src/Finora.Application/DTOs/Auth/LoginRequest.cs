@@ -10,4 +10,7 @@ public record LoginRequest
 
     [Required]
     public string Password { get; init; } = string.Empty;
+
+    /// <summary>IANA timezone detected by the browser (e.g. Europe/Lisbon).</summary>
+    public string? TimeZoneId { get; init; }
 }
