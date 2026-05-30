@@ -140,6 +140,28 @@ public class ObjectivesController : ControllerBase
         return Ok(overview);
     }
 
+    [HttpPost("{id:guid}/liquidate")]
+    [ProducesResponseType(typeof(SavingsObjectivesOverviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<SavingsObjectivesOverviewDto>> Liquidate(Guid id, CancellationToken cancellationToken)
+    {
+        if (UserId == null)
+            return NotFound();
+
+        var householdId = await ResolveHouseholdIdAsync(cancellationToken);
+        if (householdId == null)
+            return NotFound();
+
+        if (!await _subscriptionService.CanAccessObjectivesAsync(householdId.Value, cancellationToken))
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free não podes liquidar objetivos. Atualiza para Pro ou Couple." });
+
+        var overview = await _objectivesService.LiquidateAsync(id, UserId.Value, cancellationToken);
+        if (overview == null)
+            return BadRequest(new { message = "Objetivo não encontrado ou não está concluído por liquidar." });
+        return Ok(overview);
+    }
+
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(typeof(SavingsObjectivesOverviewDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

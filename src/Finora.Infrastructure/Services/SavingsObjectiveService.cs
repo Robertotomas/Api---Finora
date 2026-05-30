@@ -127,6 +127,30 @@ public class SavingsObjectiveService : ISavingsObjectiveService
         return await BuildOverviewAsync(objective.HouseholdId, all, cancellationToken);
     }
 
+    public async Task<SavingsObjectivesOverviewDto?> LiquidateAsync(
+        Guid objectiveId,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var objective = await _objectivesRepository.GetByIdAsync(objectiveId, cancellationToken);
+        if (objective == null)
+            return null;
+        if (!await UserBelongsToHouseholdAsync(userId, objective.HouseholdId, cancellationToken))
+            return null;
+        if (!await _subscriptionService.CanAccessObjectivesAsync(objective.HouseholdId, cancellationToken))
+            return null;
+        // Só objetivos concluídos e ainda não liquidados podem ser liquidados.
+        if (!objective.CompletedAt.HasValue || objective.LiquidatedAt.HasValue)
+            return null;
+
+        objective.LiquidatedAt = DateTime.UtcNow;
+        objective.UpdatedAt = DateTime.UtcNow;
+        await _objectivesRepository.UpdateAsync(objective, cancellationToken);
+
+        var all = await _objectivesRepository.GetByHouseholdAsync(objective.HouseholdId, cancellationToken);
+        return await BuildOverviewAsync(objective.HouseholdId, all, cancellationToken);
+    }
+
     public async Task<SavingsObjectivesOverviewDto?> DeleteAsync(
         Guid objectiveId,
         Guid userId,
@@ -162,6 +186,9 @@ public class SavingsObjectiveService : ISavingsObjectiveService
             .Where(x => x.CompletedAt.HasValue)
             .OrderByDescending(x => x.CompletedAt)
             .ToList();
+        // Todos os objetivos concluídos reservam o pool — incluindo os já
+        // liquidados. Liquidar significa que o dinheiro foi comprometido/gasto,
+        // por isso não volta a ficar disponível para outros objetivos.
         var reservedByCompleted = completed.Sum(x => x.TargetAmount);
         var availablePool = Math.Max(0m, totalSavings - reservedByCompleted);
 
@@ -199,7 +226,8 @@ public class SavingsObjectiveService : ISavingsObjectiveService
             TargetAmount = x.TargetAmount,
             TargetDate = x.TargetDate,
             SortOrder = x.SortOrder,
-            CompletedAt = x.CompletedAt!.Value
+            CompletedAt = x.CompletedAt!.Value,
+            LiquidatedAt = x.LiquidatedAt
         }).ToList();
 
         return new SavingsObjectivesOverviewDto
@@ -220,7 +248,9 @@ public class SavingsObjectiveService : ISavingsObjectiveService
         var totalIncome = await _dashboardRepository.GetTotalIncomeThroughLastClosedMonthAsync(householdId, cancellationToken);
         var totalExpenses = await _dashboardRepository.GetTotalExpensesThroughLastClosedMonthAsync(householdId, cancellationToken);
         var totalSavings = Math.Max(0m, totalIncome - totalExpenses);
-        var reservedByCompleted = objectives.Where(x => x.CompletedAt.HasValue).Sum(x => x.TargetAmount);
+        var reservedByCompleted = objectives
+            .Where(x => x.CompletedAt.HasValue)
+            .Sum(x => x.TargetAmount);
         var pool = Math.Max(0m, totalSavings - reservedByCompleted);
 
         var active = objectives

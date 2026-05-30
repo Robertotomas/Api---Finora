@@ -20,6 +20,7 @@ public record SavingsObjectiveHistoryDto
     public DateOnly? TargetDate { get; init; }
     public int SortOrder { get; init; }
     public DateTime CompletedAt { get; init; }
+    public DateTime? LiquidatedAt { get; init; }
 }
 
 public record SavingsObjectivesOverviewDto
