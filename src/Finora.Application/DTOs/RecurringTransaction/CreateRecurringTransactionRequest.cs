@@ -19,6 +19,11 @@ public record CreateRecurringTransactionRequest
     [MaxLength(500)]
     public string? Description { get; init; }
 
+    public TransactionEntityType EntityType { get; init; } = TransactionEntityType.Entity;
+
+    [MaxLength(200)]
+    public string? EntityName { get; init; }
+
     public Guid? DestinationAccountId { get; init; }
 
     /// <summary>0 = Monthly, 1 = Annual. Defaults to Monthly.</summary>

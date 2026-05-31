@@ -16,6 +16,11 @@ public class RecurringTransaction : BaseEntity
     public decimal Amount { get; set; }
     public string? Description { get; set; }
 
+    /// <summary>Origem/destino: uma entidade (empresa/serviço) ou uma pessoa.</summary>
+    public TransactionEntityType EntityType { get; set; } = TransactionEntityType.Entity;
+    /// <summary>Nome da entidade ou da pessoa associada (opcional).</summary>
+    public string? EntityName { get; set; }
+
     public Guid? DestinationAccountId { get; set; }
     public Account? DestinationAccount { get; set; }
 

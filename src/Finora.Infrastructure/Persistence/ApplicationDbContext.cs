@@ -81,6 +81,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Category).HasConversion<int>();
             entity.Property(e => e.Amount).HasPrecision(18, 2);
             entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.EntityType).HasConversion<int>();
+            entity.Property(e => e.EntityName).HasMaxLength(200);
 
             entity.HasOne(e => e.Account)
                 .WithMany(a => a.Transactions)
@@ -122,6 +124,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Category).HasConversion<int>();
             entity.Property(e => e.Amount).HasPrecision(18, 2);
             entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.EntityType).HasConversion<int>();
+            entity.Property(e => e.EntityName).HasMaxLength(200);
 
             entity.HasOne(e => e.Account)
                 .WithMany()

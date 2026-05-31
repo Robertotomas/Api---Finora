@@ -100,6 +100,8 @@ public class TransactionService : ITransactionService
             Amount = request.Amount,
             Date = request.Date.Kind == DateTimeKind.Utc ? request.Date : DateTime.SpecifyKind(request.Date, DateTimeKind.Utc),
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
+            EntityType = request.Type == TransactionType.Transfer ? TransactionEntityType.Entity : request.EntityType,
+            EntityName = request.Type == TransactionType.Transfer || string.IsNullOrWhiteSpace(request.EntityName) ? null : request.EntityName.Trim(),
             DestinationAccountId = request.Type == TransactionType.Transfer ? request.DestinationAccountId : null,
             CreatedAt = DateTime.UtcNow
         };
@@ -171,6 +173,8 @@ public class TransactionService : ITransactionService
         transaction.Amount = request.Amount;
         transaction.Date = request.Date.Kind == DateTimeKind.Utc ? request.Date : DateTime.SpecifyKind(request.Date, DateTimeKind.Utc);
         transaction.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+        transaction.EntityType = request.Type == TransactionType.Transfer ? TransactionEntityType.Entity : request.EntityType;
+        transaction.EntityName = request.Type == TransactionType.Transfer || string.IsNullOrWhiteSpace(request.EntityName) ? null : request.EntityName.Trim();
         transaction.DestinationAccountId = request.Type == TransactionType.Transfer ? request.DestinationAccountId : null;
         transaction.UpdatedAt = DateTime.UtcNow;
 
@@ -378,6 +382,8 @@ public class TransactionService : ITransactionService
             Amount = t.Amount,
             Date = t.Date,
             Description = t.Description,
+            EntityType = t.EntityType,
+            EntityName = t.EntityName,
             DestinationAccountId = t.DestinationAccountId,
             Splits = t.Splits.Select(s => new TransactionSplitDto { UserId = s.UserId, Percentage = s.Percentage }).ToList()
         };

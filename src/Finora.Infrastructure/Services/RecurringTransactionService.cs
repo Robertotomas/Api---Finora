@@ -128,6 +128,8 @@ public class RecurringTransactionService : IRecurringTransactionService
             Category = request.Type == Domain.Enums.TransactionType.Transfer ? Domain.Enums.TransactionCategory.Transfer : request.Category,
             Amount = request.Amount,
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
+            EntityType = request.Type == Domain.Enums.TransactionType.Transfer ? Domain.Enums.TransactionEntityType.Entity : request.EntityType,
+            EntityName = request.Type == Domain.Enums.TransactionType.Transfer || string.IsNullOrWhiteSpace(request.EntityName) ? null : request.EntityName.Trim(),
             DestinationAccountId = request.Type == Domain.Enums.TransactionType.Transfer ? request.DestinationAccountId : null,
             Frequency = frequency,
             AnnualMonth = null,
@@ -161,6 +163,8 @@ public class RecurringTransactionService : IRecurringTransactionService
         entity.Category = request.Type == Domain.Enums.TransactionType.Transfer ? Domain.Enums.TransactionCategory.Transfer : request.Category;
         entity.Amount = request.Amount;
         entity.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+        entity.EntityType = request.Type == Domain.Enums.TransactionType.Transfer ? Domain.Enums.TransactionEntityType.Entity : request.EntityType;
+        entity.EntityName = request.Type == Domain.Enums.TransactionType.Transfer || string.IsNullOrWhiteSpace(request.EntityName) ? null : request.EntityName.Trim();
         entity.DestinationAccountId = request.Type == Domain.Enums.TransactionType.Transfer ? request.DestinationAccountId : null;
         entity.Frequency = frequency;
         entity.AnnualMonth = null;
@@ -203,6 +207,8 @@ public class RecurringTransactionService : IRecurringTransactionService
             Category = r.Category,
             Amount = r.Amount,
             Description = r.Description,
+            EntityType = r.EntityType,
+            EntityName = r.EntityName,
             DestinationAccountId = r.DestinationAccountId,
             Frequency = (int)r.Frequency,
             AnnualMonth = r.AnnualMonth,

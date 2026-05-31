@@ -19,6 +19,11 @@ public record UpdateRecurringTransactionRequest
     [MaxLength(500)]
     public string? Description { get; init; }
 
+    public TransactionEntityType EntityType { get; init; } = TransactionEntityType.Entity;
+
+    [MaxLength(200)]
+    public string? EntityName { get; init; }
+
     public Guid? DestinationAccountId { get; init; }
 
     public int Frequency { get; init; }
