@@ -186,11 +186,14 @@ public class SavingsObjectiveService : ISavingsObjectiveService
             .Where(x => x.CompletedAt.HasValue)
             .OrderByDescending(x => x.CompletedAt)
             .ToList();
-        // Todos os objetivos concluídos reservam o pool — incluindo os já
-        // liquidados. Liquidar significa que o dinheiro foi comprometido/gasto,
-        // por isso não volta a ficar disponível para outros objetivos.
-        var reservedByCompleted = completed.Sum(x => x.TargetAmount);
-        var availablePool = Math.Max(0m, totalSavings - reservedByCompleted);
+        // "Reservado" = objetivos concluídos ainda NÃO liquidados (o dinheiro
+        // continua parado à espera de ser usado). Os liquidados já foram gastos:
+        // saem do "reservado" (e do botão de liquidar no dashboard), mas continuam
+        // a consumir a poupança total — por isso o "disponível para ativos" NÃO
+        // sobe quando se liquida (apenas troca de balde: reservado -> gasto).
+        var liquidatedSpent = completed.Where(x => x.LiquidatedAt.HasValue).Sum(x => x.TargetAmount);
+        var reservedByCompleted = completed.Where(x => !x.LiquidatedAt.HasValue).Sum(x => x.TargetAmount);
+        var availablePool = Math.Max(0m, totalSavings - reservedByCompleted - liquidatedSpent);
 
         var active = objectives
             .Where(x => !x.CompletedAt.HasValue)
