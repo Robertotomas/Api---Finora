@@ -176,6 +176,7 @@ public class ApplicationDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.FileRelativePath).HasMaxLength(500);
+            entity.Property(e => e.TemplateVersion).HasDefaultValue(0);
             entity.HasIndex(e => new { e.HouseholdId, e.Year, e.Month }).IsUnique();
 
             entity.HasOne(e => e.Household)

@@ -58,6 +58,7 @@ public class MonthlyReportRepository : IMonthlyReportRepository
         Guid id,
         DateTime generatedAt,
         long fileSizeBytes,
+        int templateVersion,
         CancellationToken cancellationToken = default)
     {
         var entity = await _context.MonthlyReports.FindAsync(new object[] { id }, cancellationToken);
@@ -65,6 +66,7 @@ public class MonthlyReportRepository : IMonthlyReportRepository
             return false;
         entity.GeneratedAt = generatedAt;
         entity.FileSizeBytes = fileSizeBytes;
+        entity.TemplateVersion = templateVersion;
         entity.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
         return true;

@@ -14,6 +14,13 @@ namespace Finora.Infrastructure.Services;
 
 public class MonthlyReportGenerationService : IMonthlyReportGenerationService
 {
+    /// <summary>
+    /// Current version of the HTML/PDF template. Bump this whenever <see cref="BuildHtmlDocument"/>
+    /// changes layout — the background generator re-renders any stored report whose
+    /// <see cref="MonthlyReport.TemplateVersion"/> is lower, so existing PDFs pick up the new layout.
+    /// </summary>
+    public const int CurrentTemplateVersion = 1;
+
     private readonly IDashboardService _dashboardService;
     private readonly IMonthlyReportRepository _monthlyReportRepository;
     private readonly IHouseholdRepository _householdRepository;
@@ -103,18 +110,31 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
                 var reportYear = checkYear;
                 var reportMonth = checkMonth;
 
-                if (await _monthlyReportRepository.ExistsAsync(householdId, reportYear, reportMonth, cancellationToken))
+                var existing = (await _monthlyReportRepository.ListByHouseholdAsync(householdId, reportYear, reportMonth, cancellationToken))
+                    .FirstOrDefault();
+
+                // Up-to-date report already exists → nothing to do.
+                if (existing != null && existing.TemplateVersion >= CurrentTemplateVersion)
                 {
-                    _logger.LogInformation("Report {Year}-{Month:00} already exists, skipping", reportYear, reportMonth);
+                    _logger.LogInformation("Report {Year}-{Month:00} already up to date (v{Version}), skipping", reportYear, reportMonth, existing.TemplateVersion);
                     continue;
                 }
 
-                _logger.LogInformation("Generating report for {Year}-{Month:00}...", reportYear, reportMonth);
-
                 try
                 {
-                    await GenerateForHouseholdMonthAsync(householdId, anchorUser.Id, reportYear, reportMonth, cancellationToken);
-                    _logger.LogInformation("Generated report for household {HouseholdId}: {Year}-{Month:00}", householdId, reportYear, reportMonth);
+                    if (existing != null)
+                    {
+                        // Stale layout → re-render in place with the current template.
+                        _logger.LogInformation("Report {Year}-{Month:00} on old template (v{Old} < v{Cur}), re-rendering...", reportYear, reportMonth, existing.TemplateVersion, CurrentTemplateVersion);
+                        await RegenerateReportAsync(existing.Id, householdId, anchorUser.Id, cancellationToken);
+                        _logger.LogInformation("Re-rendered report for household {HouseholdId}: {Year}-{Month:00}", householdId, reportYear, reportMonth);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Generating report for {Year}-{Month:00}...", reportYear, reportMonth);
+                        await GenerateForHouseholdMonthAsync(householdId, anchorUser.Id, reportYear, reportMonth, cancellationToken);
+                        _logger.LogInformation("Generated report for household {HouseholdId}: {Year}-{Month:00}", householdId, reportYear, reportMonth);
+                    }
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
@@ -173,6 +193,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
             GeneratedAt = DateTime.UtcNow,
             FileRelativePath = relativePath,
             FileSizeBytes = pdfBytes.LongLength,
+            TemplateVersion = CurrentTemplateVersion,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -221,6 +242,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
             reportId,
             generatedAt,
             pdfBytes.LongLength,
+            CurrentTemplateVersion,
             cancellationToken);
         if (!ok)
             return null;
