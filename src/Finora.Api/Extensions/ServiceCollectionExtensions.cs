@@ -35,6 +35,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISavingsObjectiveService, SavingsObjectiveService>();
         services.AddScoped<ISubscriptionService, SubscriptionService>();
         services.AddScoped<IRecurringAccountBalanceService, RecurringAccountBalanceService>();
+        services.AddScoped<ISearchService, SearchService>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
         services.AddScoped<ISavingsObjectiveRepository, SavingsObjectiveRepository>();

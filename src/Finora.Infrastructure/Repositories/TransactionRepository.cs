@@ -55,6 +55,20 @@ public class TransactionRepository : ITransactionRepository
         return await ordered.ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Transaction>> SearchAsync(Guid householdId, string query, int limit, CancellationToken cancellationToken = default)
+    {
+        var like = $"%{query.Trim()}%";
+        return await _context.Transactions
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId
+                && ((t.Description != null && EF.Functions.ILike(t.Description, like))
+                    || (t.EntityName != null && EF.Functions.ILike(t.EntityName, like))))
+            .OrderByDescending(t => t.Date)
+            .ThenByDescending(t => t.CreatedAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<(IReadOnlyList<Transaction> Items, int TotalCount)> GetByHouseholdPagedAsync(Guid householdId, Guid? accountId, DateTime? from, DateTime? to, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         var query = _context.Transactions
