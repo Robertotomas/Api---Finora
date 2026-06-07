@@ -55,14 +55,16 @@ public class TransactionRepository : ITransactionRepository
         return await ordered.ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<Transaction>> SearchAsync(Guid householdId, string query, int limit, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Transaction>> SearchAsync(Guid householdId, string query, IReadOnlyCollection<Domain.Enums.TransactionCategory> categories, int limit, CancellationToken cancellationToken = default)
     {
         var like = $"%{query.Trim()}%";
+        var hasCategories = categories.Count > 0;
         return await _context.Transactions
             .AsNoTracking()
             .Where(t => t.HouseholdId == householdId
                 && ((t.Description != null && EF.Functions.ILike(t.Description, like))
-                    || (t.EntityName != null && EF.Functions.ILike(t.EntityName, like))))
+                    || (t.EntityName != null && EF.Functions.ILike(t.EntityName, like))
+                    || (hasCategories && categories.Contains(t.Category))))
             .OrderByDescending(t => t.Date)
             .ThenByDescending(t => t.CreatedAt)
             .Take(limit)

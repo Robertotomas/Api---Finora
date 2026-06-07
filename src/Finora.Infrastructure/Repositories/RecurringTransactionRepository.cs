@@ -38,6 +38,22 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<RecurringTransaction>> SearchAsync(Guid householdId, string query, IReadOnlyCollection<TransactionCategory> categories, int limit, CancellationToken cancellationToken = default)
+    {
+        var like = $"%{query.Trim()}%";
+        var hasCategories = categories.Count > 0;
+        return await _context.RecurringTransactions
+            .AsNoTracking()
+            .Where(r => r.HouseholdId == householdId
+                && ((r.Description != null && EF.Functions.ILike(r.Description, like))
+                    || (r.EntityName != null && EF.Functions.ILike(r.EntityName, like))
+                    || (hasCategories && categories.Contains(r.Category))))
+            .OrderBy(r => r.StartYear)
+            .ThenBy(r => r.StartMonth)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<RecurringTransaction>> GetActiveForMonthAsync(Guid householdId, int year, int month, CancellationToken cancellationToken = default)
     {
         return await _context.RecurringTransactions
