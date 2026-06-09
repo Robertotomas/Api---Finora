@@ -17,21 +17,56 @@ public static class TransactionCategoryLabels
     public static readonly IReadOnlyDictionary<TransactionCategory, string> Labels =
         new Dictionary<TransactionCategory, string>
         {
+            // Rendimentos
             [TransactionCategory.Salary] = "Salário",
-            [TransactionCategory.Freelance] = "Freelance",
-            [TransactionCategory.Investment] = "Investimento",
-            [TransactionCategory.Gift] = "Presente",
-            [TransactionCategory.Refund] = "Reembolso",
-            [TransactionCategory.Food] = "Alimentação",
-            [TransactionCategory.Transport] = "Transportes",
-            [TransactionCategory.Housing] = "Habitação",
-            [TransactionCategory.Utilities] = "Utilidades",
+            [TransactionCategory.Investments] = "Investimentos",
+            [TransactionCategory.PurchaseRefunds] = "Reembolsos de compras",
+            [TransactionCategory.TaxRefund] = "Reembolso de impostos",
+            [TransactionCategory.BenefitsPensions] = "Subsídios e pensões",
+            [TransactionCategory.SelfEmployment] = "Rendimento independente",
+            [TransactionCategory.OtherIncome] = "Outros rendimentos",
+            // Alimentação
+            [TransactionCategory.Groceries] = "Supermercado",
+            [TransactionCategory.Restaurants] = "Restaurantes",
+            [TransactionCategory.Cafes] = "Cafés",
+            // Habitação
+            [TransactionCategory.Rent] = "Renda",
+            [TransactionCategory.HouseholdBills] = "Contas da casa",
+            // Transportes
+            [TransactionCategory.Fuel] = "Combustível",
+            [TransactionCategory.PublicTransport] = "Transportes públicos",
+            [TransactionCategory.Parking] = "Estacionamento",
+            [TransactionCategory.CarMaintenance] = "Manutenção auto",
+            [TransactionCategory.TaxiRideshare] = "Táxis e TVDE",
+            // Saúde
+            [TransactionCategory.Pharmacy] = "Farmácia",
             [TransactionCategory.Health] = "Saúde",
-            [TransactionCategory.Entertainment] = "Entretenimento",
+            [TransactionCategory.GymSports] = "Ginásio e desporto",
+            // Lazer
+            [TransactionCategory.PersonalCare] = "Cuidados pessoais",
+            [TransactionCategory.Gifts] = "Prendas",
+            [TransactionCategory.Leisure] = "Lazer",
+            [TransactionCategory.Travel] = "Viagens",
+            [TransactionCategory.Donations] = "Donativos",
+            [TransactionCategory.Pets] = "Animais de estimação",
+            [TransactionCategory.Subscriptions] = "Subscrições",
+            // Compras
             [TransactionCategory.Shopping] = "Compras",
+            [TransactionCategory.Clothing] = "Roupa e calçado",
+            [TransactionCategory.HomeFurniture] = "Casa e mobiliário",
+            [TransactionCategory.Electronics] = "Eletrónica e tecnologia",
+            [TransactionCategory.CreditCard] = "Cartão de crédito",
+            // Educação e família
             [TransactionCategory.Education] = "Educação",
-            [TransactionCategory.Transfer] = "Transferência",
-            [TransactionCategory.Other] = "Outro",
+            [TransactionCategory.Childcare] = "Cuidados infantis",
+            // Encargos
+            [TransactionCategory.Taxes] = "Impostos",
+            [TransactionCategory.FeesCommissions] = "Taxas e comissões",
+            [TransactionCategory.ProfessionalServices] = "Serviços profissionais",
+            [TransactionCategory.Insurance] = "Seguros",
+            // Outros / Transferência
+            [TransactionCategory.OtherExpense] = "Outras despesas",
+            [TransactionCategory.Transfer] = "Transferências",
         };
 
     /// <summary>

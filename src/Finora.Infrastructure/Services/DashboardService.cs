@@ -301,24 +301,8 @@ public class DashboardService : IDashboardService
         }).ToList();
     }
 
-    private static string GetCategoryName(TransactionCategory category) => category switch
-    {
-        TransactionCategory.Salary => "Salário",
-        TransactionCategory.Freelance => "Freelance",
-        TransactionCategory.Investment => "Investimento",
-        TransactionCategory.Gift => "Presente",
-        TransactionCategory.Refund => "Reembolso",
-        TransactionCategory.Food => "Alimentação",
-        TransactionCategory.Transport => "Transportes",
-        TransactionCategory.Housing => "Habitação",
-        TransactionCategory.Utilities => "Utilidades",
-        TransactionCategory.Health => "Saúde",
-        TransactionCategory.Entertainment => "Entretenimento",
-        TransactionCategory.Shopping => "Compras",
-        TransactionCategory.Education => "Educação",
-        TransactionCategory.Transfer => "Transferência",
-        _ => "Outro"
-    };
+    private static string GetCategoryName(TransactionCategory category) =>
+        TransactionCategoryLabels.Labels.TryGetValue(category, out var name) ? name : "Outro";
 
     private async Task<IReadOnlyList<AccountBalanceAtDate>> MergeRecurringIntoAccountBalancesAsync(
         Guid householdId,
