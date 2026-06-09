@@ -63,6 +63,46 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// Request a password-reset link by email. Always returns 200 (no email enumeration).
+    /// </summary>
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        await _authService.RequestPasswordResetAsync(request.Email, cancellationToken);
+        return Ok(new { message = "Se existir uma conta com esse email, enviámos um link para redefinir a palavra-passe." });
+    }
+
+    /// <summary>
+    /// Set a new password using a valid reset token from the email link.
+    /// </summary>
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        try
+        {
+            await _authService.ResetPasswordAsync(request.Token, request.NewPassword, cancellationToken);
+            return Ok(new { message = "Palavra-passe alterada com sucesso." });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Exchange a refresh token for a new access + refresh token pair.
     /// </summary>
     [HttpPost("refresh")]

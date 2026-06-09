@@ -51,6 +51,19 @@ public class PostmarkEmailService : IEmailService
         return SendAsync(toEmail, subject, html, text, cancellationToken);
     }
 
+    public Task SendPasswordResetLinkAsync(string toEmail, string resetUrl, CancellationToken cancellationToken = default)
+    {
+        var subject = "FinoraFlow — Redefinir a tua palavra-passe";
+        var html = $"""
+            <p>Olá,</p>
+            <p>Recebemos um pedido para redefinir a palavra-passe da tua conta FinoraFlow.</p>
+            <p><a href="{WebUtility.HtmlEncode(resetUrl)}">Redefinir palavra-passe</a></p>
+            <p>Este link expira em 1 hora. Se não pediste esta alteração, podes ignorar este email — a tua palavra-passe não será alterada.</p>
+            """;
+        var text = $"Olá,\n\nRecebemos um pedido para redefinir a palavra-passe da tua conta FinoraFlow.\n\nRedefinir palavra-passe: {resetUrl}\n\nEste link expira em 1 hora. Se não pediste esta alteração, ignora este email.\n";
+        return SendAsync(toEmail, subject, html, text, cancellationToken);
+    }
+
     private async Task SendAsync(string to, string subject, string htmlBody, string textBody, CancellationToken cancellationToken)
     {
         var token = _options.ServerToken?.Trim() ?? string.Empty;

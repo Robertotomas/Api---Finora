@@ -20,27 +20,34 @@ public class AuthService : IAuthService
     private readonly IHouseholdRepository _householdRepository;
     private readonly ISubscriptionRepository _subscriptionRepository;
     private readonly ICoupleInvitationService _coupleInvitationService;
+    private readonly IEmailService _emailService;
     private readonly ApplicationDbContext _dbContext;
     private readonly JwtOptions _jwtOptions;
+    private readonly AppOptions _appOptions;
 
     private const int MaxFailedAttempts = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan RefreshTokenLifetime = TimeSpan.FromDays(30);
+    private static readonly TimeSpan PasswordResetLifetime = TimeSpan.FromHours(1);
 
     public AuthService(
         IUserRepository userRepository,
         IHouseholdRepository householdRepository,
         ISubscriptionRepository subscriptionRepository,
         ICoupleInvitationService coupleInvitationService,
+        IEmailService emailService,
         ApplicationDbContext dbContext,
-        IOptions<JwtOptions> jwtOptions)
+        IOptions<JwtOptions> jwtOptions,
+        IOptions<AppOptions> appOptions)
     {
         _userRepository = userRepository;
         _householdRepository = householdRepository;
         _subscriptionRepository = subscriptionRepository;
         _coupleInvitationService = coupleInvitationService;
+        _emailService = emailService;
         _dbContext = dbContext;
         _jwtOptions = jwtOptions.Value;
+        _appOptions = appOptions.Value;
     }
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
@@ -201,6 +208,74 @@ public class AuthService : IAuthService
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken)
             ?? throw new InvalidOperationException("Utilizador não encontrado.");
         return await GenerateAuthResponseAsync(user, cancellationToken);
+    }
+
+    public async Task RequestPasswordResetAsync(string email, CancellationToken cancellationToken = default)
+    {
+        var emailNorm = email.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(emailNorm))
+            return;
+
+        var user = await _dbContext.Users
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == emailNorm, cancellationToken);
+
+        // No email enumeration: silently succeed when the account does not exist.
+        if (user == null)
+            return;
+
+        // Invalidate any previous pending reset tokens for this user.
+        await _dbContext.PasswordResetTokens
+            .Where(t => t.UserId == user.Id && !t.IsRevoked && t.UsedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.IsRevoked, true), cancellationToken);
+
+        var rawToken = InviteTokenHelper.GenerateRawToken();
+        var resetToken = new PasswordResetToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            TokenHash = InviteTokenHelper.Hash(rawToken),
+            ExpiresAt = DateTime.UtcNow.Add(PasswordResetLifetime),
+            IsRevoked = false,
+            CreatedAt = DateTime.UtcNow
+        };
+        _dbContext.PasswordResetTokens.Add(resetToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var baseUrl = _appOptions.PublicBaseUrl.TrimEnd('/');
+        var resetUrl = $"{baseUrl}/redefinir-password?token={Uri.EscapeDataString(rawToken)}";
+        await _emailService.SendPasswordResetLinkAsync(emailNorm, resetUrl, cancellationToken);
+    }
+
+    public async Task ResetPasswordAsync(string rawToken, string newPassword, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(rawToken))
+            throw new InvalidOperationException("Pedido inválido ou expirado.");
+
+        var hash = InviteTokenHelper.Hash(rawToken.Trim());
+
+        var token = await _dbContext.PasswordResetTokens
+            .Include(t => t.User)
+            .FirstOrDefaultAsync(t => t.TokenHash == hash && !t.IsRevoked && t.UsedAt == null, cancellationToken);
+
+        if (token == null || token.User == null || token.ExpiresAt < DateTime.UtcNow)
+            throw new InvalidOperationException("Pedido inválido ou expirado.");
+
+        var user = token.User;
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword, BCrypt.Net.BCrypt.GenerateSalt(10));
+        user.FailedLoginAttempts = 0;
+        user.LockedUntil = null;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        token.UsedAt = DateTime.UtcNow;
+        token.IsRevoked = true;
+        token.UpdatedAt = DateTime.UtcNow;
+
+        // Revoke all active sessions: the user must re-login with the new password.
+        await _dbContext.RefreshTokens
+            .Where(rt => rt.UserId == user.Id && !rt.IsRevoked)
+            .ExecuteUpdateAsync(s => s.SetProperty(rt => rt.IsRevoked, true), cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<UserDto?> GetProfileAsync(Guid userId, CancellationToken cancellationToken = default)
