@@ -139,6 +139,12 @@ public class ApplicationDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired(false);
 
+            entity.HasOne(e => e.ResponsibleUser)
+                .WithMany()
+                .HasForeignKey(e => e.ResponsibleUserId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .IsRequired(false);
+
             entity.HasOne(e => e.Household)
                 .WithMany()
                 .HasForeignKey(e => e.HouseholdId)

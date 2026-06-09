@@ -24,6 +24,13 @@ public class RecurringTransaction : BaseEntity
     public Guid? DestinationAccountId { get; set; }
     public Account? DestinationAccount { get; set; }
 
+    /// <summary>
+    /// Membro responsável pela recorrente (só aplicável no plano Couple e fora de transferências).
+    /// Null = sem responsável atribuído.
+    /// </summary>
+    public Guid? ResponsibleUserId { get; set; }
+    public User? ResponsibleUser { get; set; }
+
     /// <summary>Monthly, Quarterly, SemiAnnual or Annual.</summary>
     public RecurringFrequency Frequency { get; set; } = RecurringFrequency.Monthly;
 

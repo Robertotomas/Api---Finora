@@ -6,6 +6,7 @@ using Finora.Application.DTOs.Dashboard;
 using Finora.Application.DTOs.Reports;
 using Finora.Application.Interfaces;
 using Finora.Domain.Entities;
+using Finora.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
@@ -19,12 +20,14 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
     /// changes layout — the background generator re-renders any stored report whose
     /// <see cref="MonthlyReport.TemplateVersion"/> is lower, so existing PDFs pick up the new layout.
     /// </summary>
-    public const int CurrentTemplateVersion = 1;
+    public const int CurrentTemplateVersion = 2;
 
     private readonly IDashboardService _dashboardService;
     private readonly IMonthlyReportRepository _monthlyReportRepository;
     private readonly IHouseholdRepository _householdRepository;
     private readonly IUserRepository _userRepository;
+    private readonly ITransactionRepository _transactionRepository;
+    private readonly IRecurringTransactionRepository _recurringRepository;
     private readonly ISubscriptionService _subscriptionService;
     private readonly IFileStorageService _fileStorage;
     private readonly ILogger<MonthlyReportGenerationService> _logger;
@@ -39,6 +42,8 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         IMonthlyReportRepository monthlyReportRepository,
         IHouseholdRepository householdRepository,
         IUserRepository userRepository,
+        ITransactionRepository transactionRepository,
+        IRecurringTransactionRepository recurringRepository,
         ISubscriptionService subscriptionService,
         IFileStorageService fileStorage,
         ILogger<MonthlyReportGenerationService> logger)
@@ -47,6 +52,8 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         _monthlyReportRepository = monthlyReportRepository;
         _householdRepository = householdRepository;
         _userRepository = userRepository;
+        _transactionRepository = transactionRepository;
+        _recurringRepository = recurringRepository;
         _subscriptionService = subscriptionService;
         _fileStorage = fileStorage;
         _logger = logger;
@@ -176,10 +183,12 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         // Filter data to only include information up to the report month
         dashboard = CapDashboardToMonth(dashboard, year, month);
 
+        var memberBreakdown = await BuildMemberBreakdownAsync(householdId, year, month, cancellationToken);
+
         var fileName = $"{year}-{month:00}.pdf";
         var relativePath = $"reports/{householdId:N}/{fileName}";
 
-        var html = BuildHtmlDocument(dashboard, year, month);
+        var html = BuildHtmlDocument(dashboard, year, month, memberBreakdown);
         var pdfBytes = await RenderPdfAsync(html, cancellationToken);
 
         await _fileStorage.UploadAsync(relativePath, pdfBytes, "application/pdf", cancellationToken);
@@ -233,7 +242,9 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
 
         dashboard = CapDashboardToMonth(dashboard, report.Year, report.Month);
 
-        var html = BuildHtmlDocument(dashboard, report.Year, report.Month);
+        var memberBreakdown = await BuildMemberBreakdownAsync(householdId, report.Year, report.Month, cancellationToken);
+
+        var html = BuildHtmlDocument(dashboard, report.Year, report.Month, memberBreakdown);
         var pdfBytes = await RenderPdfAsync(html, cancellationToken);
         await _fileStorage.UploadAsync(report.FileRelativePath, pdfBytes, "application/pdf", cancellationToken);
 
@@ -309,7 +320,73 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         return d with { MonthlyTrend = filteredTrend };
     }
 
-    private static string BuildHtmlDocument(DashboardDto d, int year, int month)
+    private sealed record MemberRow(string Name, decimal Income, decimal Expenses)
+    {
+        public decimal Savings => Income - Expenses;
+    }
+
+    /// <summary>
+    /// Repartição de receitas/despesas do mês por membro responsável (movimentos via splits +
+    /// recorrentes via ResponsibleUserId). O que não tem responsável (e transferências não contam)
+    /// cai em "Sem responsável". Devolve null fora do Couple (menos de 2 membros).
+    /// As somas reconciliam com os KPIs do agregado (mesmo conjunto de movimentos/recorrentes do mês).
+    /// </summary>
+    private async Task<IReadOnlyList<MemberRow>?> BuildMemberBreakdownAsync(Guid householdId, int year, int month, CancellationToken ct)
+    {
+        var members = await _userRepository.GetByHouseholdIdAsync(householdId, ct);
+        if (members.Count < 2)
+            return null;
+
+        var memberIds = members.Select(m => m.Id).ToHashSet();
+        var inc = new Dictionary<Guid, decimal>();
+        var exp = new Dictionary<Guid, decimal>();
+
+        void Add(TransactionType type, Guid? responsible, decimal amount)
+        {
+            var key = responsible.HasValue && memberIds.Contains(responsible.Value) ? responsible.Value : Guid.Empty;
+            var dict = type == TransactionType.Income ? inc : exp;
+            dict[key] = dict.GetValueOrDefault(key) + amount;
+        }
+
+        var start = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var end = start.AddMonths(1).AddTicks(-1);
+
+        var txs = await _transactionRepository.GetByHouseholdAsync(householdId, null, start, end, null, ct);
+        foreach (var t in txs)
+        {
+            if (t.Type == TransactionType.Transfer) continue;
+            var responsible = t.Splits.Count == 0
+                ? (Guid?)null
+                : t.Splits.OrderByDescending(s => s.Percentage).First().UserId;
+            Add(t.Type, responsible, t.Amount);
+        }
+
+        var recs = await _recurringRepository.GetActiveForMonthAsync(householdId, year, month, ct);
+        foreach (var r in recs)
+        {
+            if (r.Type == TransactionType.Transfer) continue;
+            var amount = r.AmountForMonth(month);
+            if (amount == 0m) continue;
+            Add(r.Type, r.ResponsibleUserId, amount);
+        }
+
+        var rows = new List<MemberRow>();
+        foreach (var m in members)
+        {
+            var name = $"{m.FirstName} {m.LastName}".Trim();
+            if (string.IsNullOrEmpty(name)) name = m.Email;
+            rows.Add(new MemberRow(name, inc.GetValueOrDefault(m.Id), exp.GetValueOrDefault(m.Id)));
+        }
+
+        var unInc = inc.GetValueOrDefault(Guid.Empty);
+        var unExp = exp.GetValueOrDefault(Guid.Empty);
+        if (unInc != 0m || unExp != 0m)
+            rows.Add(new MemberRow("Sem responsável", unInc, unExp));
+
+        return rows;
+    }
+
+    private static string BuildHtmlDocument(DashboardDto d, int year, int month, IReadOnlyList<MemberRow>? memberBreakdown)
     {
         var culture = CultureInfo.GetCultureInfo("pt-PT");
         var monthTitle = culture.DateTimeFormat.GetMonthName(month);
@@ -401,6 +478,60 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         sb.AppendLine(Kpi("Poupança", d.MonthlySavings, d.Currency, piggy, "savings"));
         sb.AppendLine(KpiPlain("Saldo total", d.TotalBalance, d.Currency));
         sb.AppendLine("</div>");
+
+        // ── Por membro (apenas Couple) ──
+        if (memberBreakdown is { Count: > 0 })
+        {
+            string[] palette = { "#166534", "#2563eb", "#7c3aed", "#0891b2" };
+            var totalExp = memberBreakdown.Sum(r => r.Expenses);
+
+            sb.AppendLine("<div class=\"panel\">");
+            sb.AppendLine("<h2>Por membro</h2>");
+            sb.AppendLine("<table><thead><tr><th>Membro</th><th style=\"text-align:right\">Receitas</th><th style=\"text-align:right\">Despesas</th><th style=\"text-align:right\">Saldo</th></tr></thead><tbody>");
+            foreach (var r in memberBreakdown)
+            {
+                var saldoColor = r.Savings < 0 ? "#dc2626" : "#166534";
+                sb.AppendLine(
+                    $"<tr><td>{System.Net.WebUtility.HtmlEncode(r.Name)}</td>" +
+                    $"<td style=\"text-align:right\">{r.Income:N2} {d.Currency}</td>" +
+                    $"<td style=\"text-align:right\">{r.Expenses:N2} {d.Currency}</td>" +
+                    $"<td style=\"text-align:right;font-weight:600;color:{saldoColor}\">{r.Savings:N2} {d.Currency}</td></tr>");
+            }
+            sb.AppendLine("</tbody></table>");
+
+            if (totalExp > 0)
+            {
+                sb.AppendLine("<p style=\"margin:14px 0 6px;font-size:12px;color:#64748b\">Repartição das despesas</p>");
+                sb.AppendLine("<div style=\"display:flex;width:100%;height:14px;border-radius:7px;overflow:hidden;background:#f1f5f9\">");
+                var idx = 0;
+                foreach (var r in memberBreakdown)
+                {
+                    if (r.Expenses > 0)
+                    {
+                        var pct = ((double)(r.Expenses / totalExp) * 100).ToString("0.##", CultureInfo.InvariantCulture);
+                        var color = r.Name == "Sem responsável" ? "#94a3b8" : palette[idx % palette.Length];
+                        sb.AppendLine($"<div style=\"width:{pct}%;background:{color}\"></div>");
+                    }
+                    idx++;
+                }
+                sb.AppendLine("</div>");
+
+                sb.AppendLine("<div style=\"display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:12px;color:#334155\">");
+                idx = 0;
+                foreach (var r in memberBreakdown)
+                {
+                    if (r.Expenses > 0)
+                    {
+                        var pct = ((double)(r.Expenses / totalExp) * 100).ToString("0.#", CultureInfo.InvariantCulture);
+                        var color = r.Name == "Sem responsável" ? "#94a3b8" : palette[idx % palette.Length];
+                        sb.AppendLine($"<span style=\"display:inline-flex;align-items:center;gap:5px\"><span style=\"width:10px;height:10px;border-radius:2px;background:{color};display:inline-block\"></span>{System.Net.WebUtility.HtmlEncode(r.Name)} {pct}%</span>");
+                    }
+                    idx++;
+                }
+                sb.AppendLine("</div>");
+            }
+            sb.AppendLine("</div>");
+        }
 
         // ── Receitas: pie chart on top + detail table below ──
         var incomeStacked = d.IncomeByCategory.Count > 6;

@@ -118,6 +118,7 @@ public class RecurringTransactionService : IRecurringTransactionService
         }
 
         var frequency = (Domain.Enums.RecurringFrequency)request.Frequency;
+        var responsibleUserId = await ResolveResponsibleUserAsync(request.ResponsibleUserId, request.Type, householdId, cancellationToken);
 
         var entity = new RecurringTransaction
         {
@@ -131,6 +132,7 @@ public class RecurringTransactionService : IRecurringTransactionService
             EntityType = request.Type == Domain.Enums.TransactionType.Transfer ? Domain.Enums.TransactionEntityType.Entity : request.EntityType,
             EntityName = request.Type == Domain.Enums.TransactionType.Transfer || string.IsNullOrWhiteSpace(request.EntityName) ? null : request.EntityName.Trim(),
             DestinationAccountId = request.Type == Domain.Enums.TransactionType.Transfer ? request.DestinationAccountId : null,
+            ResponsibleUserId = responsibleUserId,
             Frequency = frequency,
             AnnualMonth = NormalizeAnnualMonth(frequency, request.AnnualMonth),
             StartMonth = frequency == Domain.Enums.RecurringFrequency.Monthly ? now.Month : 1,
@@ -166,6 +168,7 @@ public class RecurringTransactionService : IRecurringTransactionService
         entity.EntityType = request.Type == Domain.Enums.TransactionType.Transfer ? Domain.Enums.TransactionEntityType.Entity : request.EntityType;
         entity.EntityName = request.Type == Domain.Enums.TransactionType.Transfer || string.IsNullOrWhiteSpace(request.EntityName) ? null : request.EntityName.Trim();
         entity.DestinationAccountId = request.Type == Domain.Enums.TransactionType.Transfer ? request.DestinationAccountId : null;
+        entity.ResponsibleUserId = await ResolveResponsibleUserAsync(request.ResponsibleUserId, request.Type, entity.HouseholdId, cancellationToken);
         entity.Frequency = frequency;
         entity.AnnualMonth = NormalizeAnnualMonth(frequency, request.AnnualMonth);
         // Non-monthly recorrentes contam desde o início do ano (igual ao comportamento das anuais);
@@ -192,6 +195,17 @@ public class RecurringTransactionService : IRecurringTransactionService
 
         await _repository.UpdateAsync(entity, cancellationToken);
         return true;
+    }
+
+    /// <summary>
+    /// Responsável válido = membro do agregado e fora de transferências. Caso contrário, null.
+    /// </summary>
+    private async Task<Guid?> ResolveResponsibleUserAsync(Guid? responsibleUserId, Domain.Enums.TransactionType type, Guid householdId, CancellationToken cancellationToken)
+    {
+        if (responsibleUserId is null || type == Domain.Enums.TransactionType.Transfer)
+            return null;
+        var members = await _userRepository.GetByHouseholdIdAsync(householdId, cancellationToken);
+        return members.Any(m => m.Id == responsibleUserId.Value) ? responsibleUserId : null;
     }
 
     /// <summary>
@@ -225,6 +239,7 @@ public class RecurringTransactionService : IRecurringTransactionService
             EntityType = r.EntityType,
             EntityName = r.EntityName,
             DestinationAccountId = r.DestinationAccountId,
+            ResponsibleUserId = r.ResponsibleUserId,
             Frequency = (int)r.Frequency,
             AnnualMonth = r.AnnualMonth,
             StartMonth = r.StartMonth,
