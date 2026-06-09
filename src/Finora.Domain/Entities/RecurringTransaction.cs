@@ -24,9 +24,14 @@ public class RecurringTransaction : BaseEntity
     public Guid? DestinationAccountId { get; set; }
     public Account? DestinationAccount { get; set; }
 
-    /// <summary>Monthly or Annual.</summary>
+    /// <summary>Monthly, Quarterly, SemiAnnual or Annual.</summary>
     public RecurringFrequency Frequency { get; set; } = RecurringFrequency.Monthly;
-    /// <summary>For Annual frequency: the month (1-12) when the payment actually occurs.</summary>
+
+    /// <summary>
+    /// Reference/anchor month (1-12) of the first payment for non-monthly frequencies.
+    /// When set, the amount is charged in full on each payment month (cash-flow real).
+    /// When null, the amount is spread evenly across the 12 months (diluído). Ignored for Monthly.
+    /// </summary>
     public int? AnnualMonth { get; set; }
 
     /// <summary>First month (1-12) when this recurring applies.</summary>
@@ -37,4 +42,33 @@ public class RecurringTransaction : BaseEntity
     public int? EndMonth { get; set; }
     /// <summary>When removed: first year (exclusive) when it no longer applies.</summary>
     public int? EndYear { get; set; }
+
+    /// <summary>Number of payments per year implied by the frequency (12 / 4 / 2 / 1).</summary>
+    public int OccurrencesPerYear => Frequency switch
+    {
+        RecurringFrequency.Monthly => 12,
+        RecurringFrequency.Quarterly => 4,
+        RecurringFrequency.SemiAnnual => 2,
+        RecurringFrequency.Annual => 1,
+        _ => 12
+    };
+
+    /// <summary>
+    /// Amount this recurring contributes to a given calendar month (1-12), assuming it is
+    /// already known to be active that month. Monthly: full amount every month. Non-monthly
+    /// diluído (AnnualMonth == null): amount × occurrences / 12 every month. Non-monthly real
+    /// (AnnualMonth set): full amount on each payment month, 0 otherwise.
+    /// </summary>
+    public decimal AmountForMonth(int month)
+    {
+        if (Frequency == RecurringFrequency.Monthly)
+            return Amount;
+
+        if (AnnualMonth is null)
+            return Math.Round(Amount * OccurrencesPerYear / 12m, 2);
+
+        var interval = 12 / OccurrencesPerYear;
+        var diff = ((month - AnnualMonth.Value) % interval + interval) % interval;
+        return diff == 0 ? Amount : 0m;
+    }
 }

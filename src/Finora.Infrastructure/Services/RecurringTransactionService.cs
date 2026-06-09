@@ -47,9 +47,9 @@ public class RecurringTransactionService : IRecurringTransactionService
 
         var active = await _repository.GetActiveForMonthAsync(householdId, year, month, cancellationToken);
         var income = active.Where(r => r.Type == Domain.Enums.TransactionType.Income)
-            .Sum(r => r.Frequency == Domain.Enums.RecurringFrequency.Annual ? Math.Round(r.Amount / 12m, 2) : r.Amount);
+            .Sum(r => r.AmountForMonth(month));
         var expenses = active.Where(r => r.Type == Domain.Enums.TransactionType.Expense)
-            .Sum(r => r.Frequency == Domain.Enums.RecurringFrequency.Annual ? Math.Round(r.Amount / 12m, 2) : r.Amount);
+            .Sum(r => r.AmountForMonth(month));
         return (income, expenses);
     }
 
@@ -132,8 +132,8 @@ public class RecurringTransactionService : IRecurringTransactionService
             EntityName = request.Type == Domain.Enums.TransactionType.Transfer || string.IsNullOrWhiteSpace(request.EntityName) ? null : request.EntityName.Trim(),
             DestinationAccountId = request.Type == Domain.Enums.TransactionType.Transfer ? request.DestinationAccountId : null,
             Frequency = frequency,
-            AnnualMonth = null,
-            StartMonth = frequency == Domain.Enums.RecurringFrequency.Annual ? 1 : now.Month,
+            AnnualMonth = NormalizeAnnualMonth(frequency, request.AnnualMonth),
+            StartMonth = frequency == Domain.Enums.RecurringFrequency.Monthly ? now.Month : 1,
             StartYear = now.Year,
             EndMonth = null,
             EndYear = null,
@@ -167,7 +167,11 @@ public class RecurringTransactionService : IRecurringTransactionService
         entity.EntityName = request.Type == Domain.Enums.TransactionType.Transfer || string.IsNullOrWhiteSpace(request.EntityName) ? null : request.EntityName.Trim();
         entity.DestinationAccountId = request.Type == Domain.Enums.TransactionType.Transfer ? request.DestinationAccountId : null;
         entity.Frequency = frequency;
-        entity.AnnualMonth = null;
+        entity.AnnualMonth = NormalizeAnnualMonth(frequency, request.AnnualMonth);
+        // Non-monthly recorrentes contam desde o início do ano (igual ao comportamento das anuais);
+        // ao mudar de mensal → não-mensal, ajusta o mês de início.
+        if (frequency != Domain.Enums.RecurringFrequency.Monthly && entity.StartMonth != 1)
+            entity.StartMonth = 1;
         entity.UpdatedAt = DateTime.UtcNow;
 
         await _repository.UpdateAsync(entity, cancellationToken);
@@ -188,6 +192,17 @@ public class RecurringTransactionService : IRecurringTransactionService
 
         await _repository.UpdateAsync(entity, cancellationToken);
         return true;
+    }
+
+    /// <summary>
+    /// null para Mensal (não aplicável) e para o modo "diluir pelos 12 meses".
+    /// Caso contrário, o mês de referência (1-12) onde o montante é lançado.
+    /// </summary>
+    private static int? NormalizeAnnualMonth(Domain.Enums.RecurringFrequency frequency, int? annualMonth)
+    {
+        if (frequency == Domain.Enums.RecurringFrequency.Monthly || annualMonth is null)
+            return null;
+        return Math.Clamp(annualMonth.Value, 1, 12);
     }
 
     private async Task<bool> UserBelongsToHouseholdAsync(Guid userId, Guid householdId, CancellationToken cancellationToken)

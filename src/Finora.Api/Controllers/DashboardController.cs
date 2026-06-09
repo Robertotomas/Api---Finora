@@ -339,9 +339,8 @@ public class DashboardController : ControllerBase
 
                 if (!IsRecurringActiveInMonth(r, y, m)) continue;
 
-                var amount = r.Frequency == RecurringFrequency.Annual
-                    ? Math.Round(r.Amount / 12m, 2)
-                    : r.Amount;
+                var amount = r.AmountForMonth(m);
+                if (amount == 0m) continue;
 
                 if (r.Type == TransactionType.Transfer)
                 {

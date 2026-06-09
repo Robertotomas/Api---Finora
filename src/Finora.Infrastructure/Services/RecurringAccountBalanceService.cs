@@ -102,9 +102,9 @@ public class RecurringAccountBalanceService : IRecurringAccountBalanceService
                     if (!IsActiveInMonth(r, y, mo))
                         continue;
 
-                    var amount = r.Frequency == RecurringFrequency.Annual
-                        ? Math.Round(r.Amount / 12m, 2)
-                        : r.Amount;
+                    var amount = r.AmountForMonth(mo);
+                    if (amount == 0m)
+                        continue;
 
                     if (r.Type == TransactionType.Transfer)
                     {

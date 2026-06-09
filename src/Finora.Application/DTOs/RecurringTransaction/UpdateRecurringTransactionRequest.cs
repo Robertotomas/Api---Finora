@@ -27,5 +27,7 @@ public record UpdateRecurringTransactionRequest
     public Guid? DestinationAccountId { get; init; }
 
     public int Frequency { get; init; }
+
+    [Range(1, 12)]
     public int? AnnualMonth { get; init; }
 }

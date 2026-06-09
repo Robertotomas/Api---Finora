@@ -26,8 +26,9 @@ public record CreateRecurringTransactionRequest
 
     public Guid? DestinationAccountId { get; init; }
 
-    /// <summary>0 = Monthly, 1 = Annual. Defaults to Monthly.</summary>
+    /// <summary>0 = Monthly, 1 = Annual, 2 = Quarterly, 3 = SemiAnnual. Defaults to Monthly.</summary>
     public int Frequency { get; init; }
-    /// <summary>For Annual: the month (1-12) when payment occurs.</summary>
+    /// <summary>Non-monthly reference month (1-12) where the amount is charged. Null = spread across 12 months.</summary>
+    [Range(1, 12)]
     public int? AnnualMonth { get; init; }
 }

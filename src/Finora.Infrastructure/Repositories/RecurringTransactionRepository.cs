@@ -82,13 +82,13 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
                 .Where(r => (r.StartYear < y || (r.StartYear == y && r.StartMonth <= m))
                     && (r.EndYear == null || r.EndYear > y || (r.EndYear == y && r.EndMonth > m))
                     && r.Type == TransactionType.Income)
-                .Sum(r => r.Frequency == RecurringFrequency.Annual ? Math.Round(r.Amount / 12m, 2) : r.Amount);
+                .Sum(r => r.AmountForMonth(m));
 
             var expenses = recurring
                 .Where(r => (r.StartYear < y || (r.StartYear == y && r.StartMonth <= m))
                     && (r.EndYear == null || r.EndYear > y || (r.EndYear == y && r.EndMonth > m))
                     && r.Type == TransactionType.Expense)
-                .Sum(r => r.Frequency == RecurringFrequency.Annual ? Math.Round(r.Amount / 12m, 2) : r.Amount);
+                .Sum(r => r.AmountForMonth(m));
 
             result.Add((y, m, income, expenses));
 
@@ -106,7 +106,8 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
         return active
             .Where(r => r.Type == TransactionType.Expense)
             .GroupBy(r => (int)r.Category)
-            .Select(g => ((int)g.Key, g.Sum(r => r.Frequency == RecurringFrequency.Annual ? Math.Round(r.Amount / 12m, 2) : r.Amount)))
+            .Select(g => ((int)g.Key, g.Sum(r => r.AmountForMonth(month))))
+            .Where(x => x.Item2 != 0m)
             .OrderByDescending(x => x.Item2)
             .ToList();
     }
@@ -118,7 +119,8 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
         return active
             .Where(r => r.Type == TransactionType.Income)
             .GroupBy(r => (int)r.Category)
-            .Select(g => ((int)g.Key, g.Sum(r => r.Frequency == RecurringFrequency.Annual ? Math.Round(r.Amount / 12m, 2) : r.Amount)))
+            .Select(g => ((int)g.Key, g.Sum(r => r.AmountForMonth(month))))
+            .Where(x => x.Item2 != 0m)
             .OrderByDescending(x => x.Item2)
             .ToList();
     }
@@ -171,9 +173,9 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
                 if (!active)
                     continue;
 
-                var amount = r.Frequency == RecurringFrequency.Annual
-                    ? Math.Round(r.Amount / 12m, 2)
-                    : r.Amount;
+                var amount = r.AmountForMonth(m);
+                if (amount == 0m)
+                    continue;
 
                 if (r.Type == TransactionType.Income)
                 {
