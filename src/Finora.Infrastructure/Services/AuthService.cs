@@ -242,7 +242,7 @@ public class AuthService : IAuthService
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         var baseUrl = _appOptions.PublicBaseUrl.TrimEnd('/');
-        var resetUrl = $"{baseUrl}/redefinir-password?token={Uri.EscapeDataString(rawToken)}";
+        var resetUrl = $"{baseUrl}/reset-password?token={Uri.EscapeDataString(rawToken)}";
         await _emailService.SendPasswordResetLinkAsync(emailNorm, resetUrl, cancellationToken);
     }
 

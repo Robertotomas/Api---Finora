@@ -336,7 +336,7 @@ public class TransactionService : ITransactionService
             HouseholdId = householdId,
             Type = NotificationType.BudgetExceeded,
             Message = $"As despesas de {MonthNames[month]} ultrapassaram o orçamento de {budget.ExpectedExpenses:N2}€.",
-            RedirectUrl = "/movimentos?tab=dashboard",
+            RedirectUrl = "/transactions?tab=dashboard",
             DeduplicationKey = dedupKey,
             CreatedAt = DateTime.UtcNow
         }, ct);

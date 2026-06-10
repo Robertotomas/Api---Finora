@@ -215,7 +215,7 @@ public class HouseholdService : IHouseholdService
                         UserId = partner.Id,
                         Type = NotificationType.SubscriptionExpired,
                         Message = $"{leaverName} saiu do agregado. O plano Couple foi cancelado.",
-                        RedirectUrl = "/subscricao",
+                        RedirectUrl = "/subscription",
                         DeduplicationKey = dedupKey,
                         CreatedAt = now
                     }, cancellationToken);
@@ -234,7 +234,7 @@ public class HouseholdService : IHouseholdService
                         UserId = userId,
                         Type = NotificationType.SubscriptionExpired,
                         Message = "Saíste do agregado. O plano Couple foi cancelado.",
-                        RedirectUrl = "/subscricao",
+                        RedirectUrl = "/subscription",
                         DeduplicationKey = dedupKey,
                         CreatedAt = now
                     }, cancellationToken);

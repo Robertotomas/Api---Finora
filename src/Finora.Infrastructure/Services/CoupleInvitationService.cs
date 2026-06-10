@@ -337,7 +337,7 @@ public class CoupleInvitationService : ICoupleInvitationService
             UserId = inviterUserId,
             Type = NotificationType.CoupleInviteAccepted,
             Message = $"{name} aceitou o convite e juntou-se ao agregado!",
-            RedirectUrl = "/agregado",
+            RedirectUrl = "/household",
             DeduplicationKey = dedupKey,
             CreatedAt = DateTime.UtcNow
         }, ct);
@@ -362,7 +362,7 @@ public class CoupleInvitationService : ICoupleInvitationService
             UserId = inviteeUserId,
             Type = NotificationType.CoupleInviteAccepted,
             Message = $"Juntaste-te ao agregado de {name}!",
-            RedirectUrl = "/agregado",
+            RedirectUrl = "/household",
             DeduplicationKey = dedupKey,
             CreatedAt = DateTime.UtcNow
         }, ct);

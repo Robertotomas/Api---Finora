@@ -96,6 +96,9 @@ public class RecurringTransactionsController : ControllerBase
         if (householdId == null)
             return NotFound();
 
+        if (!await _subscriptionService.CanAccessRecurringAsync(householdId.Value, cancellationToken))
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "RECURRING_LOCKED", message = "As transações recorrentes estão disponíveis nos planos Pro e Couple." });
+
         var (_, needsPrimary, _) = await _subscriptionService.GetFreeMultiAccountStateAsync(householdId.Value, cancellationToken);
         if (needsPrimary)
             return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_PRIMARY_REQUIRED", message = "Tens mais do que uma conta no plano Free. Escolhe a conta principal em Contas antes de adicionar recorrentes." });
@@ -133,6 +136,9 @@ public class RecurringTransactionsController : ControllerBase
         var existing = await _recurringService.GetByIdAsync(id, UserId.Value, cancellationToken);
         if (existing == null)
             return NotFound();
+
+        if (!await _subscriptionService.CanAccessRecurringAsync(existing.HouseholdId, cancellationToken))
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "RECURRING_LOCKED", message = "As transações recorrentes estão disponíveis nos planos Pro e Couple." });
 
         var (_, needsPrimary, _) = await _subscriptionService.GetFreeMultiAccountStateAsync(existing.HouseholdId, cancellationToken);
         if (needsPrimary)

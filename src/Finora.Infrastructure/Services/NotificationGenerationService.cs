@@ -117,7 +117,7 @@ public class NotificationGenerationService : INotificationGenerationService
             HouseholdId = householdId,
             Type = NotificationType.BudgetExceeded,
             Message = $"As despesas de {MonthNames[month]} ultrapassaram o orçamento de {budget.ExpectedExpenses:N2}€.",
-            RedirectUrl = "/movimentos?tab=dashboard",
+            RedirectUrl = "/transactions?tab=dashboard",
             DeduplicationKey = dedupKey,
             CreatedAt = DateTime.UtcNow
         }, ct);
@@ -161,7 +161,7 @@ public class NotificationGenerationService : INotificationGenerationService
             HouseholdId = householdId,
             Type = NotificationType.MonthClose,
             Message = $"O resumo de {MonthNames[prevMonth]} está disponível. Consulta em Relatórios.",
-            RedirectUrl = "/relatorios",
+            RedirectUrl = "/reports",
             DeduplicationKey = dedupKey,
             CreatedAt = DateTime.UtcNow
         }, ct);
@@ -198,7 +198,7 @@ public class NotificationGenerationService : INotificationGenerationService
             HouseholdId = householdId,
             Type = NotificationType.MonthlyPlanReminder,
             Message = $"Ainda não preencheste o plano mensal de {MonthNames[month]}. Define o teu orçamento.",
-            RedirectUrl = "/plano-mensal",
+            RedirectUrl = "/monthly-plan",
             DeduplicationKey = dedupKey,
             CreatedAt = DateTime.UtcNow
         }, ct);
@@ -235,7 +235,7 @@ public class NotificationGenerationService : INotificationGenerationService
             HouseholdId = householdId,
             Type = NotificationType.SubscriptionExpired,
             Message = $"O teu plano {planName} expirou. Renova para manter acesso completo.",
-            RedirectUrl = "/subscricao",
+            RedirectUrl = "/subscription",
             DeduplicationKey = dedupKey,
             CreatedAt = DateTime.UtcNow
         }, ct);

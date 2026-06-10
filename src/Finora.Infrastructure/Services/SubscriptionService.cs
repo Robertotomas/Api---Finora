@@ -94,6 +94,12 @@ public class SubscriptionService : ISubscriptionService
     public Task<bool> CanAccessMonthlyReportsAsync(Guid householdId, CancellationToken cancellationToken = default)
         => CanAccessObjectivesAsync(householdId, cancellationToken);
 
+    public async Task<bool> CanAccessRecurringAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        var plan = await GetActivePlanAsync(householdId, cancellationToken);
+        return plan != SubscriptionPlan.Free;
+    }
+
     public async Task<DateTime?> GetPaidPlanStartDateAsync(Guid householdId, CancellationToken cancellationToken = default)
     {
         var active = await _subscriptionRepository.GetActiveByHouseholdIdAsync(householdId, cancellationToken);
@@ -129,7 +135,7 @@ public class SubscriptionService : ISubscriptionService
                         HouseholdId = householdId,
                         Type = NotificationType.SubscriptionExpired,
                         Message = "O teu plano Pro foi cancelado. Renova para manter acesso completo.",
-                        RedirectUrl = "/subscricao",
+                        RedirectUrl = "/subscription",
                         DeduplicationKey = dedupKey,
                         CreatedAt = now
                     }, cancellationToken);
