@@ -64,6 +64,19 @@ public class PostmarkEmailService : IEmailService
         return SendAsync(toEmail, subject, html, text, cancellationToken);
     }
 
+    public Task SendEmailConfirmationLinkAsync(string toEmail, string confirmationUrl, CancellationToken cancellationToken = default)
+    {
+        var subject = "FinoraFlow — Confirma o teu email";
+        var html = $"""
+            <p>Olá,</p>
+            <p>Bem-vindo ao FinoraFlow! Falta um passo: confirma o teu email para ativar a conta.</p>
+            <p><a href="{WebUtility.HtmlEncode(confirmationUrl)}">Confirmar email</a></p>
+            <p>Este link expira em 24 horas. Se não criaste esta conta, podes ignorar este email.</p>
+            """;
+        var text = $"Olá,\n\nBem-vindo ao FinoraFlow! Confirma o teu email para ativar a conta.\n\nConfirmar email: {confirmationUrl}\n\nEste link expira em 24 horas. Se não criaste esta conta, ignora este email.\n";
+        return SendAsync(toEmail, subject, html, text, cancellationToken);
+    }
+
     private async Task SendAsync(string to, string subject, string htmlBody, string textBody, CancellationToken cancellationToken)
     {
         var token = _options.ServerToken?.Trim() ?? string.Empty;

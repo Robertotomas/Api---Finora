@@ -23,6 +23,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<CoupleInvitation> CoupleInvitations => Set<CoupleInvitation>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
+    public DbSet<EmailConfirmationToken> EmailConfirmationTokens => Set<EmailConfirmationToken>();
     public DbSet<MonthlyBudget> MonthlyBudgets => Set<MonthlyBudget>();
     public DbSet<Notification> Notifications => Set<Notification>();
 
@@ -220,6 +221,19 @@ public class ApplicationDbContext : DbContext
         });
 
         modelBuilder.Entity<PasswordResetToken>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TokenHash).HasMaxLength(64);
+            entity.HasIndex(e => e.TokenHash);
+            entity.HasIndex(e => e.UserId);
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<EmailConfirmationToken>(entity =>
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.TokenHash).HasMaxLength(64);

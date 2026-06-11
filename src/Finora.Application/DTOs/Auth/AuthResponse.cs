@@ -22,4 +22,17 @@ public record UserDto
     public string? TimeZoneId { get; init; }
     public bool IsCoupleGuest { get; init; }
     public bool? CoupleJoinDataMigrated { get; init; }
+    public bool EmailConfirmed { get; init; }
+}
+
+/// <summary>
+/// Resultado do registo. No fluxo normal exige confirmação de email
+/// (<see cref="RequiresEmailConfirmation"/> = true, sem sessão iniciada). Em convites de
+/// casal o email já está provado, por isso devolve <see cref="Auth"/> e inicia sessão logo.
+/// </summary>
+public record RegisterResult
+{
+    public bool RequiresEmailConfirmation { get; init; }
+    public AuthResponse? Auth { get; init; }
+    public string Email { get; init; } = string.Empty;
 }
