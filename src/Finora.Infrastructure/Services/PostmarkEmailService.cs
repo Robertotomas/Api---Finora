@@ -28,25 +28,27 @@ public class PostmarkEmailService : IEmailService
     public Task SendCoupleInviteLinkAsync(string toEmail, string inviterDisplayName, string registerUrl, CancellationToken cancellationToken = default)
     {
         var subject = "Convite FinoraFlow — Junta-te ao teu agregado";
-        var html = $"""
-            <p>Olá,</p>
-            <p><strong>{WebUtility.HtmlEncode(inviterDisplayName)}</strong> convidou-te para partilhar o agregado no FinoraFlow.</p>
-            <p><a href="{WebUtility.HtmlEncode(registerUrl)}">Criar conta com este convite</a></p>
-            <p>Se não esperavas este email, podes ignorá-lo.</p>
-            """;
-        var text = $"Olá,\n\n{inviterDisplayName} convidou-te para partilhar o agregado no FinoraFlow.\n\nCriar conta: {registerUrl}\n";
+        var name = WebUtility.HtmlEncode(inviterDisplayName);
+        var body =
+            EmailTemplate.Paragraph("Olá,") +
+            EmailTemplate.Paragraph($"<strong>{name}</strong> convidou-te para partilhar o agregado no FinoraFlow. Giram as finanças do casal num só lugar.") +
+            EmailTemplate.Button("Aceitar convite", registerUrl) +
+            EmailTemplate.Muted("Se não esperavas este email, podes ignorá-lo com segurança.");
+        var html = EmailTemplate.Render($"{inviterDisplayName} convidou-te para o agregado no FinoraFlow.", "Convite para o teu agregado", body);
+        var text = $"Olá,\n\n{inviterDisplayName} convidou-te para partilhar o agregado no FinoraFlow.\n\nAceitar convite: {registerUrl}\n";
         return SendAsync(toEmail, subject, html, text, cancellationToken);
     }
 
     public Task SendCoupleInviteOtpAsync(string toEmail, string inviterDisplayName, string otpCode, CancellationToken cancellationToken = default)
     {
         var subject = "Código FinoraFlow — Convite para agregado";
-        var html = $"""
-            <p>Olá,</p>
-            <p><strong>{WebUtility.HtmlEncode(inviterDisplayName)}</strong> convidou-te para partilhar o agregado no FinoraFlow.</p>
-            <p>O teu código de verificação é: <strong>{WebUtility.HtmlEncode(otpCode)}</strong></p>
-            <p>Expira em 15 minutos. Se não iniciaste este convite, ignora este email.</p>
-            """;
+        var name = WebUtility.HtmlEncode(inviterDisplayName);
+        var body =
+            EmailTemplate.Paragraph("Olá,") +
+            EmailTemplate.Paragraph($"<strong>{name}</strong> convidou-te para partilhar o agregado no FinoraFlow. Usa o código abaixo para confirmar.") +
+            EmailTemplate.CodeBox(otpCode) +
+            EmailTemplate.Muted("O código expira em 15 minutos. Se não iniciaste este convite, podes ignorar este email.");
+        var html = EmailTemplate.Render("O teu código de convite FinoraFlow.", "O teu código de convite", body);
         var text = $"Olá,\n\n{inviterDisplayName} convidou-te para partilhar o agregado.\n\nCódigo: {otpCode}\n\nExpira em 15 minutos.\n";
         return SendAsync(toEmail, subject, html, text, cancellationToken);
     }
@@ -54,12 +56,12 @@ public class PostmarkEmailService : IEmailService
     public Task SendPasswordResetLinkAsync(string toEmail, string resetUrl, CancellationToken cancellationToken = default)
     {
         var subject = "FinoraFlow — Redefinir a tua palavra-passe";
-        var html = $"""
-            <p>Olá,</p>
-            <p>Recebemos um pedido para redefinir a palavra-passe da tua conta FinoraFlow.</p>
-            <p><a href="{WebUtility.HtmlEncode(resetUrl)}">Redefinir palavra-passe</a></p>
-            <p>Este link expira em 1 hora. Se não pediste esta alteração, podes ignorar este email — a tua palavra-passe não será alterada.</p>
-            """;
+        var body =
+            EmailTemplate.Paragraph("Olá,") +
+            EmailTemplate.Paragraph("Recebemos um pedido para redefinir a palavra-passe da tua conta FinoraFlow. Clica no botão para escolher uma nova.") +
+            EmailTemplate.Button("Redefinir palavra-passe", resetUrl) +
+            EmailTemplate.Muted("Este link expira em 1 hora. Se não pediste esta alteração, ignora este email — a tua palavra-passe não será alterada.");
+        var html = EmailTemplate.Render("Redefine a palavra-passe da tua conta FinoraFlow.", "Redefinir a palavra-passe", body);
         var text = $"Olá,\n\nRecebemos um pedido para redefinir a palavra-passe da tua conta FinoraFlow.\n\nRedefinir palavra-passe: {resetUrl}\n\nEste link expira em 1 hora. Se não pediste esta alteração, ignora este email.\n";
         return SendAsync(toEmail, subject, html, text, cancellationToken);
     }
@@ -67,12 +69,12 @@ public class PostmarkEmailService : IEmailService
     public Task SendEmailConfirmationLinkAsync(string toEmail, string confirmationUrl, CancellationToken cancellationToken = default)
     {
         var subject = "FinoraFlow — Confirma o teu email";
-        var html = $"""
-            <p>Olá,</p>
-            <p>Bem-vindo ao FinoraFlow! Falta um passo: confirma o teu email para ativar a conta.</p>
-            <p><a href="{WebUtility.HtmlEncode(confirmationUrl)}">Confirmar email</a></p>
-            <p>Este link expira em 24 horas. Se não criaste esta conta, podes ignorar este email.</p>
-            """;
+        var body =
+            EmailTemplate.Paragraph("Olá,") +
+            EmailTemplate.Paragraph("Bem-vindo ao FinoraFlow! Falta só um passo: confirma o teu email para ativar a conta.") +
+            EmailTemplate.Button("Confirmar email", confirmationUrl) +
+            EmailTemplate.Muted("Este link expira em 24 horas. Se não criaste esta conta, podes ignorar este email.");
+        var html = EmailTemplate.Render("Confirma o teu email para ativar a conta FinoraFlow.", "Confirma o teu email", body);
         var text = $"Olá,\n\nBem-vindo ao FinoraFlow! Confirma o teu email para ativar a conta.\n\nConfirmar email: {confirmationUrl}\n\nEste link expira em 24 horas. Se não criaste esta conta, ignora este email.\n";
         return SendAsync(toEmail, subject, html, text, cancellationToken);
     }
