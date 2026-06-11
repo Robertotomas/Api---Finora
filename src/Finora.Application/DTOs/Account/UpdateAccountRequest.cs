@@ -18,4 +18,7 @@ public record UpdateAccountRequest
     [MaxLength(3)]
     [MinLength(3)]
     public string Currency { get; init; } = "EUR";
+
+    [MaxLength(500)]
+    public string? LogoDomain { get; init; }
 }

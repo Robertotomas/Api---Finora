@@ -339,7 +339,7 @@ public class DashboardRepository : IDashboardRepository
         var accounts = await _context.Accounts
             .AsNoTracking()
             .Where(a => a.HouseholdId == householdId && !a.IsArchived && a.CreatedAt < firstDayAfterPeriod)
-            .Select(a => new { a.Id, a.Name, a.Type, a.Currency, a.Balance })
+            .Select(a => new { a.Id, a.Name, a.Type, a.Currency, a.Balance, a.LogoDomain })
             .ToListAsync(cancellationToken);
 
         var accountIds = accounts.Select(a => a.Id).ToHashSet();
@@ -381,7 +381,7 @@ public class DashboardRepository : IDashboardRepository
         {
             var delta = deltaDict.GetValueOrDefault(a.Id, 0m);
             var balanceAtEnd = a.Balance - delta;
-            return new AccountBalanceAtDate(a.Id, a.Name, (int)a.Type, a.Currency ?? "EUR", balanceAtEnd);
+            return new AccountBalanceAtDate(a.Id, a.Name, (int)a.Type, a.Currency ?? "EUR", balanceAtEnd, a.LogoDomain);
         }).ToList();
     }
 }

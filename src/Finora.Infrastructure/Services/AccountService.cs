@@ -78,6 +78,7 @@ public class AccountService : IAccountService
             Type = request.Type,
             Balance = request.Balance,
             Currency = request.Currency.Trim().ToUpperInvariant(),
+            LogoDomain = string.IsNullOrWhiteSpace(request.LogoDomain) ? null : request.LogoDomain.Trim(),
             HouseholdId = householdId,
             CreatedAt = DateTime.UtcNow
         };
@@ -104,6 +105,7 @@ public class AccountService : IAccountService
         account.Type = request.Type;
         account.Balance = request.Balance;
         account.Currency = request.Currency.Trim().ToUpperInvariant();
+        account.LogoDomain = string.IsNullOrWhiteSpace(request.LogoDomain) ? null : request.LogoDomain.Trim();
         account.UpdatedAt = DateTime.UtcNow;
 
         await _accountRepository.UpdateAsync(account, cancellationToken);
@@ -296,7 +298,8 @@ public class AccountService : IAccountService
             HouseholdId = account.HouseholdId,
             IsActiveForPlan = isActiveForPlan,
             IsArchived = account.IsArchived,
-            ArchivedAt = account.ArchivedAt
+            ArchivedAt = account.ArchivedAt,
+            LogoDomain = account.LogoDomain
         };
     }
 

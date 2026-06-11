@@ -8,6 +8,7 @@ using Finora.Application.Interfaces;
 using Finora.Domain.Entities;
 using Finora.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
 
@@ -20,7 +21,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
     /// changes layout — the background generator re-renders any stored report whose
     /// <see cref="MonthlyReport.TemplateVersion"/> is lower, so existing PDFs pick up the new layout.
     /// </summary>
-    public const int CurrentTemplateVersion = 2;
+    public const int CurrentTemplateVersion = 3;
 
     private readonly IDashboardService _dashboardService;
     private readonly IMonthlyReportRepository _monthlyReportRepository;
@@ -30,6 +31,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
     private readonly IRecurringTransactionRepository _recurringRepository;
     private readonly ISubscriptionService _subscriptionService;
     private readonly IFileStorageService _fileStorage;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<MonthlyReportGenerationService> _logger;
 
     private static readonly JsonSerializerOptions JsonHtmlSafe = new()
@@ -46,6 +48,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         IRecurringTransactionRepository recurringRepository,
         ISubscriptionService subscriptionService,
         IFileStorageService fileStorage,
+        IConfiguration configuration,
         ILogger<MonthlyReportGenerationService> logger)
     {
         _dashboardService = dashboardService;
@@ -56,7 +59,18 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         _recurringRepository = recurringRepository;
         _subscriptionService = subscriptionService;
         _fileStorage = fileStorage;
+        _configuration = configuration;
         _logger = logger;
+    }
+
+    /// <summary>URL do logo para o relatório: Logo.dev (se houver token) ou favicon do Google.</summary>
+    private static string? AccountLogoUrl(string? domain, string? token)
+    {
+        if (string.IsNullOrWhiteSpace(domain)) return null;
+        var enc = Uri.EscapeDataString(domain.Trim());
+        return string.IsNullOrWhiteSpace(token)
+            ? $"https://www.google.com/s2/favicons?domain={enc}&sz=64"
+            : $"https://img.logo.dev/{enc}?token={token}&size=64&format=png";
     }
 
     public async Task GenerateDueReportsAsync(CancellationToken cancellationToken = default)
@@ -188,7 +202,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         var fileName = $"{year}-{month:00}.pdf";
         var relativePath = $"reports/{householdId:N}/{fileName}";
 
-        var html = BuildHtmlDocument(dashboard, year, month, memberBreakdown);
+        var html = BuildHtmlDocument(dashboard, year, month, memberBreakdown, _configuration["LogoDev:Token"]);
         var pdfBytes = await RenderPdfAsync(html, cancellationToken);
 
         await _fileStorage.UploadAsync(relativePath, pdfBytes, "application/pdf", cancellationToken);
@@ -244,7 +258,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
 
         var memberBreakdown = await BuildMemberBreakdownAsync(householdId, report.Year, report.Month, cancellationToken);
 
-        var html = BuildHtmlDocument(dashboard, report.Year, report.Month, memberBreakdown);
+        var html = BuildHtmlDocument(dashboard, report.Year, report.Month, memberBreakdown, _configuration["LogoDev:Token"]);
         var pdfBytes = await RenderPdfAsync(html, cancellationToken);
         await _fileStorage.UploadAsync(report.FileRelativePath, pdfBytes, "application/pdf", cancellationToken);
 
@@ -386,7 +400,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         return rows;
     }
 
-    private static string BuildHtmlDocument(DashboardDto d, int year, int month, IReadOnlyList<MemberRow>? memberBreakdown)
+    private static string BuildHtmlDocument(DashboardDto d, int year, int month, IReadOnlyList<MemberRow>? memberBreakdown, string? logoDevToken)
     {
         var culture = CultureInfo.GetCultureInfo("pt-PT");
         var monthTitle = culture.DateTimeFormat.GetMonthName(month);
@@ -426,6 +440,9 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         // Panels
         sb.AppendLine(".panel{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);border:1px solid #f1f5f9;margin-bottom:16px;}");
         sb.AppendLine(".panel h2{font-size:14px;margin:0 0 12px;font-weight:600;color:#334155;}");
+        // Conta com logo
+        sb.AppendLine(".acc{display:inline-flex;align-items:center;gap:8px;}");
+        sb.AppendLine(".acc-logo{width:20px;height:20px;border-radius:4px;object-fit:contain;background:#fff;border:1px solid #eef2f7;}");
         // Category row: chart + table side by side, card grows with table
         sb.AppendLine(".cat-row{display:flex;gap:16px;align-items:flex-start;}");
         sb.AppendLine(".cat-chart{width:220px;min-width:220px;height:220px;position:relative;flex-shrink:0;}");
@@ -570,7 +587,13 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
             sb.AppendLine("<h2>Saldos por conta (fim do período)</h2>");
             sb.AppendLine("<table><thead><tr><th>Conta</th><th style=\"text-align:right\">Saldo</th></tr></thead><tbody>");
             foreach (var a in d.AccountBalancesAtPeriod)
-                sb.AppendLine($"<tr><td>{System.Net.WebUtility.HtmlEncode(a.Name)}</td><td style=\"text-align:right;font-weight:600\">{a.Balance:N2} {a.Currency}</td></tr>");
+            {
+                var logoUrl = AccountLogoUrl(a.LogoDomain, logoDevToken);
+                var nameCell = logoUrl != null
+                    ? $"<span class=\"acc\"><img class=\"acc-logo\" src=\"{System.Net.WebUtility.HtmlEncode(logoUrl)}\" alt=\"\"/>{System.Net.WebUtility.HtmlEncode(a.Name)}</span>"
+                    : System.Net.WebUtility.HtmlEncode(a.Name);
+                sb.AppendLine($"<tr><td>{nameCell}</td><td style=\"text-align:right;font-weight:600\">{a.Balance:N2} {a.Currency}</td></tr>");
+            }
             sb.AppendLine("</tbody></table></div>");
         }
 

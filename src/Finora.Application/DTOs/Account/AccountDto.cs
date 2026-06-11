@@ -14,4 +14,6 @@ public record AccountDto
     public bool IsActiveForPlan { get; init; } = true;
     public bool IsArchived { get; init; }
     public DateTime? ArchivedAt { get; init; }
+    /// <summary>Domínio da marca para o logo (ex.: "santander.pt"). Opcional.</summary>
+    public string? LogoDomain { get; init; }
 }

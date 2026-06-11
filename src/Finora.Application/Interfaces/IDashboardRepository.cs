@@ -2,7 +2,7 @@ using Finora.Domain.Enums;
 
 namespace Finora.Application.Interfaces;
 
-public record AccountBalanceAtDate(Guid AccountId, string Name, int Type, string Currency, decimal Balance);
+public record AccountBalanceAtDate(Guid AccountId, string Name, int Type, string Currency, decimal Balance, string? LogoDomain = null);
 
 public interface IDashboardRepository
 {

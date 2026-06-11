@@ -7,6 +7,12 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Em hosts como o Render, a porta é injetada via env PORT — escutar nela (0.0.0.0).
+// Localmente PORT não está definido, por isso mantém o comportamento normal (launchSettings).
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(port))
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
 // appsettings.Local.json overrides (optional, in .gitignore)
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 

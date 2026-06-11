@@ -68,6 +68,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Type).HasConversion<int>();
             entity.Property(e => e.Balance).HasPrecision(18, 2);
             entity.Property(e => e.Currency).HasMaxLength(3);
+            entity.Property(e => e.LogoDomain).HasMaxLength(500);
 
             entity.HasOne(e => e.Household)
                 .WithMany(h => h.Accounts)
