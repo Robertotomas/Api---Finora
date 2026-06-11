@@ -58,9 +58,8 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
     {
         return await _context.RecurringTransactions
             .AsNoTracking()
-            .Where(r => r.HouseholdId == householdId
-                && (r.StartYear < year || (r.StartYear == year && r.StartMonth <= month))
-                && (r.EndYear == null || r.EndYear > year || (r.EndYear == year && r.EndMonth > month)))
+            .Where(r => r.HouseholdId == householdId)
+            .Where(RecurringTransaction.ActiveInMonthExpr(year, month))
             .ToListAsync(cancellationToken);
     }
 
@@ -79,15 +78,11 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
         for (var i = 0; i < count; i++)
         {
             var income = recurring
-                .Where(r => (r.StartYear < y || (r.StartYear == y && r.StartMonth <= m))
-                    && (r.EndYear == null || r.EndYear > y || (r.EndYear == y && r.EndMonth > m))
-                    && r.Type == TransactionType.Income)
+                .Where(r => r.IsActiveInMonth(y, m) && r.Type == TransactionType.Income)
                 .Sum(r => r.AmountForMonth(m));
 
             var expenses = recurring
-                .Where(r => (r.StartYear < y || (r.StartYear == y && r.StartMonth <= m))
-                    && (r.EndYear == null || r.EndYear > y || (r.EndYear == y && r.EndMonth > m))
-                    && r.Type == TransactionType.Expense)
+                .Where(r => r.IsActiveInMonth(y, m) && r.Type == TransactionType.Expense)
                 .Sum(r => r.AmountForMonth(m));
 
             result.Add((y, m, income, expenses));
@@ -168,9 +163,7 @@ public class RecurringTransactionRepository : IRecurringTransactionRepository
 
             foreach (var r in recurring)
             {
-                var active = (r.StartYear < y || (r.StartYear == y && r.StartMonth <= m))
-                    && (r.EndYear == null || r.EndYear > y || (r.EndYear == y && r.EndMonth > m));
-                if (!active)
+                if (!r.IsActiveInMonth(y, m))
                     continue;
 
                 var amount = r.AmountForMonth(m);

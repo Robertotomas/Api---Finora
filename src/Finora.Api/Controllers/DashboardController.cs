@@ -364,9 +364,5 @@ public class DashboardController : ControllerBase
     }
 
     private static bool IsRecurringActiveInMonth(Domain.Entities.RecurringTransaction r, int y, int m)
-    {
-        var started = r.StartYear < y || (r.StartYear == y && r.StartMonth <= m);
-        var notEnded = r.EndYear == null || r.EndYear > y || (r.EndYear == y && (r.EndMonth ?? 13) > m);
-        return started && notEnded;
-    }
+        => r.IsActiveInMonth(y, m);
 }

@@ -137,9 +137,5 @@ public class RecurringAccountBalanceService : IRecurringAccountBalanceService
     }
 
     private static bool IsActiveInMonth(RecurringTransaction r, int y, int m)
-    {
-        var started = r.StartYear < y || (r.StartYear == y && r.StartMonth <= m);
-        var notEnded = r.EndYear == null || r.EndYear > y || (r.EndYear == y && r.EndMonth > m);
-        return started && notEnded;
-    }
+        => r.IsActiveInMonth(y, m);
 }

@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Finora.Domain.Common;
 using Finora.Domain.Enums;
 
@@ -78,4 +79,30 @@ public class RecurringTransaction : BaseEntity
         var diff = ((month - AnnualMonth.Value) % interval + interval) % interval;
         return diff == 0 ? Amount : 0m;
     }
+
+    /// <summary>
+    /// Regra do "fim exclusivo": uma recorrente está ativa num (ano, mês) sse
+    /// início ≤ mês E (sem fim OU fim > mês). O fim é EXCLUSIVO — deixa de contar
+    /// no próprio mês de fim. Fonte de verdade partilhada pelo repositório.
+    /// <para>
+    /// ⚠️ Espelhada em <see cref="ActiveInMonthExpr"/> (versão traduzível pelo EF) e no
+    /// frontend (`recurringActiveEnd`/`activeRecurring` em TransactionsView.vue). Manter os
+    /// três em sincronia.
+    /// </para>
+    /// </summary>
+    public bool IsActiveInMonth(int year, int month)
+    {
+        var started = StartYear < year || (StartYear == year && StartMonth <= month);
+        var notEnded = EndYear is null || EndYear > year || (EndYear == year && (EndMonth ?? 13) > month);
+        return started && notEnded;
+    }
+
+    /// <summary>
+    /// Versão em árvore de expressão de <see cref="IsActiveInMonth"/>, para o EF Core
+    /// conseguir traduzir o predicado para SQL. Mantém a MESMA lógica do método de instância
+    /// (garantido por teste de equivalência).
+    /// </summary>
+    public static Expression<Func<RecurringTransaction, bool>> ActiveInMonthExpr(int year, int month) =>
+        r => (r.StartYear < year || (r.StartYear == year && r.StartMonth <= month))
+            && (r.EndYear == null || r.EndYear > year || (r.EndYear == year && (r.EndMonth ?? 13) > month));
 }
