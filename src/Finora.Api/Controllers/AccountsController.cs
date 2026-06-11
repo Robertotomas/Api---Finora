@@ -103,7 +103,7 @@ public class AccountsController : ControllerBase
             return NotFound();
 
         if (!await _subscriptionService.CanAddAccountAsync(householdId.Value, cancellationToken))
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free só podes ter 1 conta. Atualiza para Pro ou Couple." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free só pode ter 1 conta. Atualize para Pro ou Couple." });
 
         var account = await _accountService.CreateAsync(request, householdId.Value, UserId.Value, cancellationToken);
         return account == null ? NotFound() : CreatedAtAction(nameof(GetById), new { id = account.Id }, account);
@@ -126,7 +126,7 @@ public class AccountsController : ControllerBase
             return NotFound();
 
         if (!await _subscriptionService.CanUseAccountForActivityAsync(householdId.Value, id, cancellationToken))
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_ACCOUNT_LOCKED", message = "No plano Free só podes editar a conta principal. Escolhe outra conta como principal ou elimina contas extra." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_ACCOUNT_LOCKED", message = "No plano Free só pode editar a conta principal. Escolha outra conta como principal ou elimine contas extra." });
 
         var account = await _accountService.UpdateAsync(id, request, UserId.Value, cancellationToken);
         return account == null ? NotFound() : Ok(account);

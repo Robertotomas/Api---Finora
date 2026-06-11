@@ -42,7 +42,7 @@ public class AuthController : ControllerBase
                 {
                     requiresEmailConfirmation = true,
                     email = result.Email,
-                    message = "Conta criada. Enviámos um email para confirmares o teu endereço."
+                    message = "Conta criada. Enviámos um email para confirmar o seu endereço."
                 });
             }
 
@@ -142,7 +142,7 @@ public class AuthController : ControllerBase
         try
         {
             await _authService.ConfirmEmailAsync(request.Token, cancellationToken);
-            return Ok(new { message = "Email confirmado com sucesso. Já podes iniciar sessão." });
+            return Ok(new { message = "Email confirmado com sucesso. Já pode iniciar sessão." });
         }
         catch (InvalidOperationException ex)
         {

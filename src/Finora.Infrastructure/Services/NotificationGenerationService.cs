@@ -197,7 +197,7 @@ public class NotificationGenerationService : INotificationGenerationService
             Id = Guid.NewGuid(),
             HouseholdId = householdId,
             Type = NotificationType.MonthlyPlanReminder,
-            Message = $"Ainda não preencheste o plano mensal de {MonthNames[month]}. Define o teu orçamento.",
+            Message = $"Ainda não preencheu o plano mensal de {MonthNames[month]}. Defina o seu orçamento.",
             RedirectUrl = "/monthly-plan",
             DeduplicationKey = dedupKey,
             CreatedAt = DateTime.UtcNow
@@ -234,7 +234,7 @@ public class NotificationGenerationService : INotificationGenerationService
             Id = Guid.NewGuid(),
             HouseholdId = householdId,
             Type = NotificationType.SubscriptionExpired,
-            Message = $"O teu plano {planName} expirou. Renova para manter acesso completo.",
+            Message = $"O seu plano {planName} expirou. Renove para manter acesso completo.",
             RedirectUrl = "/subscription",
             DeduplicationKey = dedupKey,
             CreatedAt = DateTime.UtcNow

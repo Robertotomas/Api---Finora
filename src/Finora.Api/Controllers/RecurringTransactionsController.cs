@@ -101,10 +101,10 @@ public class RecurringTransactionsController : ControllerBase
 
         var (_, needsPrimary, _) = await _subscriptionService.GetFreeMultiAccountStateAsync(householdId.Value, cancellationToken);
         if (needsPrimary)
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_PRIMARY_REQUIRED", message = "Tens mais do que uma conta no plano Free. Escolhe a conta principal em Contas antes de adicionar recorrentes." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_PRIMARY_REQUIRED", message = "Tem mais do que uma conta no plano Free. Escolha a conta principal em Contas antes de adicionar recorrentes." });
 
         if (!await _subscriptionService.CanUseAccountForActivityAsync(householdId.Value, request.AccountId, cancellationToken))
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_ACCOUNT_LOCKED", message = "No plano Free só podes usar recorrentes na conta principal." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_ACCOUNT_LOCKED", message = "No plano Free só pode usar recorrentes na conta principal." });
 
         var now = DateTime.UtcNow;
         if (!await _subscriptionService.CanAddTransactionAsync(
@@ -115,8 +115,8 @@ public class RecurringTransactionsController : ControllerBase
                 cancellationToken))
         {
             var message = request.Type == TransactionType.Income
-                ? "No plano Free só podes adicionar 1 receita por mês."
-                : "No plano Free só podes adicionar 5 despesas por mês.";
+                ? "No plano Free só pode adicionar 1 receita por mês."
+                : "No plano Free só pode adicionar 5 despesas por mês.";
             return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message });
         }
 
@@ -142,11 +142,11 @@ public class RecurringTransactionsController : ControllerBase
 
         var (_, needsPrimary, _) = await _subscriptionService.GetFreeMultiAccountStateAsync(existing.HouseholdId, cancellationToken);
         if (needsPrimary)
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_PRIMARY_REQUIRED", message = "Tens mais do que uma conta no plano Free. Escolhe a conta principal em Contas." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_PRIMARY_REQUIRED", message = "Tem mais do que uma conta no plano Free. Escolha a conta principal em Contas." });
 
         if (!await _subscriptionService.CanUseAccountForActivityAsync(existing.HouseholdId, existing.AccountId, cancellationToken)
             || !await _subscriptionService.CanUseAccountForActivityAsync(existing.HouseholdId, request.AccountId, cancellationToken))
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_ACCOUNT_LOCKED", message = "No plano Free só podes editar recorrentes na conta principal." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_ACCOUNT_LOCKED", message = "No plano Free só pode editar recorrentes na conta principal." });
 
         var updated = await _recurringService.UpdateAsync(id, request, UserId!.Value, cancellationToken);
         return updated == null ? NotFound() : Ok(updated);

@@ -87,7 +87,7 @@ public class ObjectivesController : ControllerBase
             return NotFound();
 
         if (!await _subscriptionService.CanAccessObjectivesAsync(householdId.Value, cancellationToken))
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free não podes adicionar objetivos. Atualiza para Pro ou Couple." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free não pode adicionar objetivos. Atualize para Pro ou Couple." });
 
         var overview = await _objectivesService.CreateAsync(request, householdId.Value, UserId.Value, cancellationToken);
         return overview == null ? NotFound() : CreatedAtAction(nameof(GetOverview), overview);
@@ -112,7 +112,7 @@ public class ObjectivesController : ControllerBase
             return NotFound();
 
         if (!await _subscriptionService.CanAccessObjectivesAsync(householdId.Value, cancellationToken))
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free não podes adicionar objetivos. Atualiza para Pro ou Couple." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free não pode adicionar objetivos. Atualize para Pro ou Couple." });
 
         var overview = await _objectivesService.UpdateAsync(id, request, UserId.Value, cancellationToken);
         return overview == null ? NotFound() : Ok(overview);
@@ -132,7 +132,7 @@ public class ObjectivesController : ControllerBase
             return NotFound();
 
         if (!await _subscriptionService.CanAccessObjectivesAsync(householdId.Value, cancellationToken))
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free não podes adicionar objetivos. Atualiza para Pro ou Couple." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free não pode adicionar objetivos. Atualize para Pro ou Couple." });
 
         var overview = await _objectivesService.FinalizeAsync(id, UserId.Value, cancellationToken);
         if (overview == null)
@@ -154,7 +154,7 @@ public class ObjectivesController : ControllerBase
             return NotFound();
 
         if (!await _subscriptionService.CanAccessObjectivesAsync(householdId.Value, cancellationToken))
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free não podes liquidar objetivos. Atualiza para Pro ou Couple." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free não pode liquidar objetivos. Atualize para Pro ou Couple." });
 
         var overview = await _objectivesService.LiquidateAsync(id, UserId.Value, cancellationToken);
         if (overview == null)
@@ -176,7 +176,7 @@ public class ObjectivesController : ControllerBase
             return NotFound();
 
         if (!await _subscriptionService.CanAccessObjectivesAsync(householdId.Value, cancellationToken))
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free não podes eliminar objetivos. Atualiza para Pro ou Couple." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free não pode eliminar objetivos. Atualize para Pro ou Couple." });
 
         var overview = await _objectivesService.DeleteAsync(id, UserId.Value, cancellationToken);
         return overview == null ? NotFound() : Ok(overview);

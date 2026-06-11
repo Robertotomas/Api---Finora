@@ -75,7 +75,7 @@ public class CoupleInvitationService : ICoupleInvitationService
             throw new InvalidOperationException("Este agregado já tem dois membros.");
 
         if (members.Any(m => m.Email.Equals(emailNorm, StringComparison.OrdinalIgnoreCase)))
-            throw new InvalidOperationException("Este email já pertence ao teu agregado.");
+            throw new InvalidOperationException("Este email já pertence ao seu agregado.");
 
         // Um convite novo substitui qualquer convite pendente (incl. outro email), para permitir reenvio e testes.
         await _invitationRepository.RevokeAllPendingForHouseholdAsync(householdId, cancellationToken);
@@ -271,7 +271,7 @@ public class CoupleInvitationService : ICoupleInvitationService
         var soleInMine = await _userRepository.GetByHouseholdIdAsync(oldHouseholdId, cancellationToken);
         if (soleInMine.Count != 1)
             throw new InvalidOperationException(
-                "Só podes aceitar o convite se fores o único membro do teu agregado atual.");
+                "Só pode aceitar o convite se for o único membro do seu agregado atual.");
 
         if (migratePersonalData)
         {
@@ -352,8 +352,8 @@ public class CoupleInvitationService : ICoupleInvitationService
         var inviter = await _userRepository.GetByIdAsync(inviterUserId, ct);
         var name = inviter != null
             ? $"{inviter.FirstName} {inviter.LastName}".Trim()
-            : "o teu parceiro";
-        if (string.IsNullOrEmpty(name)) name = "o teu parceiro";
+            : "o seu parceiro";
+        if (string.IsNullOrEmpty(name)) name = "o seu parceiro";
 
         await _notificationRepository.AddAsync(new Notification
         {
@@ -361,7 +361,7 @@ public class CoupleInvitationService : ICoupleInvitationService
             HouseholdId = householdId,
             UserId = inviteeUserId,
             Type = NotificationType.CoupleInviteAccepted,
-            Message = $"Juntaste-te ao agregado de {name}!",
+            Message = $"Juntou-se ao agregado de {name}!",
             RedirectUrl = "/household",
             DeduplicationKey = dedupKey,
             CreatedAt = DateTime.UtcNow

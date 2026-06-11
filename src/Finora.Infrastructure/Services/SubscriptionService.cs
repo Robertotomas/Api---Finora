@@ -134,7 +134,7 @@ public class SubscriptionService : ISubscriptionService
                         Id = Guid.NewGuid(),
                         HouseholdId = householdId,
                         Type = NotificationType.SubscriptionExpired,
-                        Message = "O teu plano Pro foi cancelado. Renova para manter acesso completo.",
+                        Message = "O seu plano Pro foi cancelado. Renove para manter acesso completo.",
                         RedirectUrl = "/subscription",
                         DeduplicationKey = dedupKey,
                         CreatedAt = now

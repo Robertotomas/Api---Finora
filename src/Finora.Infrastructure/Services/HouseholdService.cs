@@ -143,7 +143,7 @@ public class HouseholdService : IHouseholdService
                 ?? throw new InvalidOperationException("Agregado não encontrado.");
 
             if (household.Type != HouseholdType.Couple)
-                throw new InvalidOperationException("Só podes sair quando o agregado está no plano casal.");
+                throw new InvalidOperationException("Só pode sair quando o agregado está no plano casal.");
 
             var members = await _db.Users.Where(u => u.HouseholdId == household.Id).ToListAsync(cancellationToken);
             var now = DateTime.UtcNow;
@@ -271,7 +271,7 @@ public class HouseholdService : IHouseholdService
     {
         const string expected = "RECOMECAR";
         if (!string.Equals(confirmPhrase.Trim(), expected, StringComparison.Ordinal))
-            throw new InvalidOperationException($"Escreve exatamente {expected} para confirmar.");
+            throw new InvalidOperationException($"Escreva exatamente {expected} para confirmar.");
 
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
             ?? throw new InvalidOperationException("Utilizador não encontrado.");

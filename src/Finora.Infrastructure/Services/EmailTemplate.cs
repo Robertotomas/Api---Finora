@@ -43,7 +43,7 @@ internal static class EmailTemplate
             <td style="padding:24px 40px 32px 40px;">
               <div style="height:1px;background-color:#eef2f6;line-height:1px;font-size:0;margin-bottom:20px;">&nbsp;</div>
               <p style="margin:0;font-family:{{FontStack}};font-size:12px;line-height:1.6;color:#94a3b8;">
-                FinoraFlow · As tuas finanças, sob controlo.<br>
+                FinoraFlow · As suas finanças, sob controlo.<br>
                 Este é um email automático — por favor não respondas a esta mensagem.
               </p>
             </td>

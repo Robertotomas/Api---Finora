@@ -131,7 +131,7 @@ public class AccountService : IAccountService
         if (txCount > 0 || recurringCount > 0)
         {
             throw new InvalidOperationException(
-                "Não é possível eliminar esta conta porque existem movimentos ou recorrentes associados. Remove primeiro esses movimentos e recorrentes em Movimentos se quiseres continuar.");
+                "Não é possível eliminar esta conta porque existem movimentos ou recorrentes associados. Remova primeiro esses movimentos e recorrentes em Movimentos se quiser continuar.");
         }
 
         var householdId = account.HouseholdId;
@@ -152,7 +152,7 @@ public class AccountService : IAccountService
         if (account.Balance != 0)
         {
             if (!targetAccountId.HasValue)
-                throw new InvalidOperationException("Esta conta tem saldo. Escolhe uma conta de destino para transferir o saldo antes de arquivar.");
+                throw new InvalidOperationException("Esta conta tem saldo. Escolha uma conta de destino para transferir o saldo antes de arquivar.");
 
             if (targetAccountId.Value == id)
                 throw new InvalidOperationException("A conta de destino não pode ser igual à conta de origem.");

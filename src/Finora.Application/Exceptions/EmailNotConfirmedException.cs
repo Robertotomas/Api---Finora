@@ -9,7 +9,7 @@ public class EmailNotConfirmedException : Exception
     public string Email { get; }
 
     public EmailNotConfirmedException(string email)
-        : base("Confirma o teu email antes de iniciar sessão.")
+        : base("Confirme o seu email antes de iniciar sessão.")
     {
         Email = email;
     }
