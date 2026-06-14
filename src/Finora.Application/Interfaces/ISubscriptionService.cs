@@ -10,6 +10,7 @@ public interface ISubscriptionService
     Task<bool> CanAccessObjectivesAsync(Guid householdId, CancellationToken cancellationToken = default);
     Task<bool> CanAccessMonthlyReportsAsync(Guid householdId, CancellationToken cancellationToken = default);
     Task<bool> CanAccessRecurringAsync(Guid householdId, CancellationToken cancellationToken = default);
+    Task<bool> CanAccessAssetsAsync(Guid householdId, CancellationToken cancellationToken = default);
     Task<DateTime?> GetPaidPlanStartDateAsync(Guid householdId, CancellationToken cancellationToken = default);
     Task UpgradeAsync(Guid householdId, SubscriptionPlan plan, CancellationToken cancellationToken = default);
 

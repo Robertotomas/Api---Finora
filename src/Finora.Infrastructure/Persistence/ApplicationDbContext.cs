@@ -26,6 +26,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<EmailConfirmationToken> EmailConfirmationTokens => Set<EmailConfirmationToken>();
     public DbSet<MonthlyBudget> MonthlyBudgets => Set<MonthlyBudget>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<Asset> Assets => Set<Asset>();
+    public DbSet<AssetValuation> AssetValuations => Set<AssetValuation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -267,6 +269,33 @@ public class ApplicationDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.UserId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<Asset>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).HasMaxLength(200);
+            entity.Property(e => e.Category).HasConversion<int>();
+            entity.Property(e => e.AcquisitionCost).HasPrecision(18, 2);
+            entity.Property(e => e.Currency).HasMaxLength(3);
+            entity.HasIndex(e => e.HouseholdId);
+
+            entity.HasOne(e => e.Household)
+                .WithMany(h => h.Assets)
+                .HasForeignKey(e => e.HouseholdId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AssetValuation>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Value).HasPrecision(18, 2);
+            entity.HasIndex(e => new { e.AssetId, e.Date });
+
+            entity.HasOne(e => e.Asset)
+                .WithMany(a => a.Valuations)
+                .HasForeignKey(e => e.AssetId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<CoupleInvitation>(entity =>

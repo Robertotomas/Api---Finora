@@ -17,19 +17,22 @@ public class DashboardController : ControllerBase
     private readonly IDashboardRepository _dashboardRepository;
     private readonly IRecurringTransactionRepository _recurringRepository;
     private readonly IAccountRepository _accountRepository;
+    private readonly IAssetRepository _assetRepository;
 
     public DashboardController(
         IDashboardService dashboardService,
         IHouseholdService householdService,
         IDashboardRepository dashboardRepository,
         IRecurringTransactionRepository recurringRepository,
-        IAccountRepository accountRepository)
+        IAccountRepository accountRepository,
+        IAssetRepository assetRepository)
     {
         _dashboardService = dashboardService;
         _householdService = householdService;
         _dashboardRepository = dashboardRepository;
         _recurringRepository = recurringRepository;
         _accountRepository = accountRepository;
+        _assetRepository = assetRepository;
     }
 
     private Guid? UserId
@@ -198,6 +201,34 @@ public class DashboardController : ControllerBase
             var activeRecurring = recurringTxs.ToList();
             var archivedIds = accounts.Where(a => a.IsArchived).Select(a => a.Id).ToHashSet();
 
+            // 5b. Assets: precompute each asset's valuations sorted ascending by date.
+            //     The asset's value on a given day = most recent valuation with Date <= day (0 before acquisition).
+            //     This keeps the patrimônio chart consistent with the hero total and the "vs last month" change.
+            var assets = await _assetRepository.GetByHouseholdIdAsync(householdId.Value, cancellationToken);
+            var assetValuationSeries = assets
+                .Select(a => a.Valuations
+                    .Select(v => (Date: DateOnly.FromDateTime(v.Date), v.Value))
+                    .OrderBy(v => v.Date)
+                    .ToList())
+                .Where(series => series.Count > 0)
+                .ToList();
+
+            decimal AssetsValueOn(DateOnly day)
+            {
+                var total = 0m;
+                foreach (var series in assetValuationSeries)
+                {
+                    decimal? current = null;
+                    foreach (var (date, value) in series)
+                    {
+                        if (date <= day) current = value;
+                        else break;
+                    }
+                    if (current.HasValue) total += current.Value;
+                }
+                return total;
+            }
+
             // 6. Build cumulative transaction effects per account up to each day (forward approach)
             // Group all range transactions by (date, accountId), handling transfers
             var txByDateAccount = new Dictionary<(DateOnly, Guid), decimal>();
@@ -284,6 +315,9 @@ public class DashboardController : ControllerBase
                         activeRecurring, existingAccounts, archivedIds, d.Year, d.Month);
                     balance += recurringAdj;
                 }
+
+                // Add the value of all assets as of this day (Património Total inclui bens e valores).
+                balance += AssetsValueOn(d);
 
                 points.Add(new { date = d.ToString("yyyy-MM-dd"), balance = Math.Round(balance, 2) });
             }

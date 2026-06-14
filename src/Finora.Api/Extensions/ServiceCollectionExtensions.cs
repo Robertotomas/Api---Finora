@@ -38,6 +38,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IStripeService, StripeService>();
         services.AddScoped<IRecurringAccountBalanceService, RecurringAccountBalanceService>();
         services.AddScoped<ISearchService, SearchService>();
+        services.AddScoped<IAssetService, AssetService>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
         services.AddScoped<ISavingsObjectiveRepository, SavingsObjectiveRepository>();
@@ -45,6 +46,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IHouseholdRepository, HouseholdRepository>();
         services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();
         services.AddScoped<IAccountRepository, AccountRepository>();
+        services.AddScoped<IAssetRepository, AssetRepository>();
         services.AddScoped<ITransactionRepository, TransactionRepository>();
         services.AddScoped<IMonthlyReportRepository, MonthlyReportRepository>();
         services.AddScoped<IMonthlyReportGenerationService, MonthlyReportGenerationService>();

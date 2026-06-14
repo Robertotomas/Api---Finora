@@ -25,4 +25,5 @@ public class Household : BaseEntity
     public ICollection<Subscription> Subscriptions { get; set; } = new List<Subscription>();
     public ICollection<MonthlyReport> MonthlyReports { get; set; } = new List<MonthlyReport>();
     public ICollection<MonthlyBudget> MonthlyBudgets { get; set; } = new List<MonthlyBudget>();
+    public ICollection<Asset> Assets { get; set; } = new List<Asset>();
 }

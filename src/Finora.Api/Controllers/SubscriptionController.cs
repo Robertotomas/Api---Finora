@@ -95,6 +95,7 @@ public class SubscriptionController : ControllerBase
         public bool ObjectivesEnabled { get; init; }
         public bool MonthlyReportsEnabled { get; init; }
         public bool RecurringEnabled { get; init; }
+        public bool AssetsEnabled { get; init; }
         public bool CanInvite { get; init; }
         public bool NeedsPrimaryAccountSelection { get; init; }
         public Guid? PrimaryAccountId { get; init; }
@@ -158,6 +159,7 @@ public class SubscriptionController : ControllerBase
                 ObjectivesEnabled = objectivesEnabled,
                 MonthlyReportsEnabled = monthlyReportsEnabled,
                 RecurringEnabled = objectivesEnabled,
+                AssetsEnabled = objectivesEnabled,
                 CanInvite = canInvite,
                 NeedsPrimaryAccountSelection = freeMulti && needsPrimary,
                 PrimaryAccountId = freeMulti && !needsPrimary ? primaryAccountId : null
