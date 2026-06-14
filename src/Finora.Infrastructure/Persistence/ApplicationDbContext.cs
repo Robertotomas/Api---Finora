@@ -36,6 +36,7 @@ public class ApplicationDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Name).HasMaxLength(200);
             entity.Property(e => e.Type).HasConversion<int>();
+            entity.Property(e => e.StripeCustomerId).HasMaxLength(255);
 
             entity.HasOne(e => e.PrimaryAccount)
                 .WithMany()
@@ -174,6 +175,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Plan).HasConversion<int>();
             entity.Property(e => e.Status).HasConversion<int>();
             entity.Property(e => e.ExpiresAt);
+            entity.Property(e => e.StripeSubscriptionId).HasMaxLength(255);
 
             entity.HasOne(e => e.Household)
                 .WithMany(h => h.Subscriptions)

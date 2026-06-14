@@ -13,5 +13,8 @@ public class Subscription : BaseEntity
 
     public DateTime StartedAt { get; set; }
     public DateTime? ExpiresAt { get; set; }
+
+    /// <summary>Stripe Subscription id backing this row (null for Free/internal upgrades).</summary>
+    public string? StripeSubscriptionId { get; set; }
 }
 

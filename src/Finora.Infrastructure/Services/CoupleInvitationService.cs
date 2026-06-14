@@ -77,6 +77,11 @@ public class CoupleInvitationService : ICoupleInvitationService
         if (members.Any(m => m.Email.Equals(emailNorm, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException("Este email já pertence ao seu agregado.");
 
+        // O convite exige uma subscrição Couple já ativa (paga via Stripe) — não ativa o plano de graça.
+        var currentPlan = await _subscriptionService.GetActivePlanAsync(householdId, cancellationToken);
+        if (currentPlan != SubscriptionPlan.Couple)
+            throw new InvalidOperationException("Precisa do plano Couple ativo para convidar o seu parceiro.");
+
         // Um convite novo substitui qualquer convite pendente (incl. outro email), para permitir reenvio e testes.
         await _invitationRepository.RevokeAllPendingForHouseholdAsync(householdId, cancellationToken);
 
@@ -108,7 +113,7 @@ public class CoupleInvitationService : ICoupleInvitationService
             };
 
             await _emailService.SendCoupleInviteOtpAsync(emailNorm, inviterName, otp, cancellationToken);
-            await EnsureCouplePlanAndPersistInvitationAsync(householdId, invitation, cancellationToken);
+            await _invitationRepository.AddAsync(invitation, cancellationToken);
         }
         else
         {
@@ -133,23 +138,8 @@ public class CoupleInvitationService : ICoupleInvitationService
             var baseUrl = _appOptions.PublicBaseUrl.TrimEnd('/');
             var registerUrl = $"{baseUrl}/register?invite={Uri.EscapeDataString(rawToken)}";
             await _emailService.SendCoupleInviteLinkAsync(emailNorm, inviterName, registerUrl, cancellationToken);
-            await EnsureCouplePlanAndPersistInvitationAsync(householdId, invitation, cancellationToken);
+            await _invitationRepository.AddAsync(invitation, cancellationToken);
         }
-    }
-
-    /// <summary>
-    /// Só altera o plano para Couple e grava o convite depois do email ser enviado com sucesso.
-    /// </summary>
-    private async Task EnsureCouplePlanAndPersistInvitationAsync(
-        Guid householdId,
-        CoupleInvitation invitation,
-        CancellationToken cancellationToken)
-    {
-        var plan = await _subscriptionService.GetActivePlanAsync(householdId, cancellationToken);
-        if (plan != SubscriptionPlan.Couple)
-            await _subscriptionService.UpgradeAsync(householdId, SubscriptionPlan.Couple, cancellationToken);
-
-        await _invitationRepository.AddAsync(invitation, cancellationToken);
     }
 
     public async Task<ValidateInviteTokenResult> ValidateInviteTokenAsync(string rawToken, CancellationToken cancellationToken = default)

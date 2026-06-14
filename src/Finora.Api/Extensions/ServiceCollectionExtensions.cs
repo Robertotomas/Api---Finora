@@ -20,6 +20,7 @@ public static class ServiceCollectionExtensions
     {
         services.Configure<AppOptions>(configuration.GetSection(AppOptions.SectionName));
         services.Configure<PostmarkOptions>(configuration.GetSection(PostmarkOptions.SectionName));
+        services.Configure<StripeOptions>(configuration.GetSection(StripeOptions.SectionName));
 
         services.AddHttpClient<IEmailService, PostmarkEmailService>(client =>
         {
@@ -34,6 +35,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<ISavingsObjectiveService, SavingsObjectiveService>();
         services.AddScoped<ISubscriptionService, SubscriptionService>();
+        services.AddScoped<IStripeService, StripeService>();
         services.AddScoped<IRecurringAccountBalanceService, RecurringAccountBalanceService>();
         services.AddScoped<ISearchService, SearchService>();
         services.AddScoped<IUserRepository, UserRepository>();

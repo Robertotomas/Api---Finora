@@ -79,6 +79,20 @@ public class PostmarkEmailService : IEmailService
         return SendAsync(toEmail, subject, html, text, cancellationToken);
     }
 
+    public Task SendSubscriptionConfirmationAsync(string toEmail, string planName, string manageUrl, CancellationToken cancellationToken = default)
+    {
+        var plan = WebUtility.HtmlEncode(planName);
+        var subject = $"FinoraFlow — Subscrição {planName} ativada";
+        var body =
+            EmailTemplate.Paragraph("Olá,") +
+            EmailTemplate.Paragraph($"A sua subscrição <strong>{plan}</strong> está ativa. Obrigado por escolher o FinoraFlow — já tem acesso a tudo o que o plano inclui.") +
+            EmailTemplate.Button("Ver a minha subscrição", manageUrl) +
+            EmailTemplate.Muted("Pode gerir ou cancelar a subscrição a qualquer momento na página de subscrição. Ao cancelar, mantém o acesso até ao fim do período já pago.");
+        var html = EmailTemplate.Render($"A sua subscrição {planName} no FinoraFlow está ativa.", "Subscrição ativada", body);
+        var text = $"Olá,\n\nA sua subscrição {planName} está ativa. Obrigado por escolher o FinoraFlow.\n\nVer a minha subscrição: {manageUrl}\n\nPode gerir ou cancelar a qualquer momento; ao cancelar mantém o acesso até ao fim do período já pago.\n";
+        return SendAsync(toEmail, subject, html, text, cancellationToken);
+    }
+
     private async Task SendAsync(string to, string subject, string htmlBody, string textBody, CancellationToken cancellationToken)
     {
         var token = _options.ServerToken?.Trim() ?? string.Empty;
