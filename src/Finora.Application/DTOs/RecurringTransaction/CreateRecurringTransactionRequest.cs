@@ -19,10 +19,19 @@ public record CreateRecurringTransactionRequest
     [MaxLength(500)]
     public string? Description { get; init; }
 
+    public TransactionEntityType EntityType { get; init; } = TransactionEntityType.Entity;
+
+    [MaxLength(200)]
+    public string? EntityName { get; init; }
+
     public Guid? DestinationAccountId { get; init; }
 
-    /// <summary>0 = Monthly, 1 = Annual. Defaults to Monthly.</summary>
+    /// <summary>Membro responsável (só Couple, fora de transferências). Null = sem responsável.</summary>
+    public Guid? ResponsibleUserId { get; init; }
+
+    /// <summary>0 = Monthly, 1 = Annual, 2 = Quarterly, 3 = SemiAnnual. Defaults to Monthly.</summary>
     public int Frequency { get; init; }
-    /// <summary>For Annual: the month (1-12) when payment occurs.</summary>
+    /// <summary>Non-monthly reference month (1-12) where the amount is charged. Null = spread across 12 months.</summary>
+    [Range(1, 12)]
     public int? AnnualMonth { get; init; }
 }

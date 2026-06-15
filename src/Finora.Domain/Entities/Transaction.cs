@@ -17,6 +17,11 @@ public class Transaction : BaseEntity
     public DateTime Date { get; set; }
     public string? Description { get; set; }
 
+    /// <summary>Origem/destino do movimento: uma entidade (empresa/serviço) ou uma pessoa.</summary>
+    public TransactionEntityType EntityType { get; set; } = TransactionEntityType.Entity;
+    /// <summary>Nome da entidade ou da pessoa associada ao movimento (opcional).</summary>
+    public string? EntityName { get; set; }
+
     public Guid? DestinationAccountId { get; set; }
     public Account? DestinationAccount { get; set; }
 

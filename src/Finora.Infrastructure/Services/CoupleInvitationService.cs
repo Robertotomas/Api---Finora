@@ -23,6 +23,7 @@ public class CoupleInvitationService : ICoupleInvitationService
     private readonly IRecurringTransactionRepository _recurringTransactionRepository;
     private readonly ISavingsObjectiveRepository _savingsObjectiveRepository;
     private readonly IMonthlyReportRepository _monthlyReportRepository;
+    private readonly INotificationRepository _notificationRepository;
     private readonly IEmailService _emailService;
     private readonly AppOptions _appOptions;
     private readonly ApplicationDbContext _db;
@@ -37,6 +38,7 @@ public class CoupleInvitationService : ICoupleInvitationService
         IRecurringTransactionRepository recurringTransactionRepository,
         ISavingsObjectiveRepository savingsObjectiveRepository,
         IMonthlyReportRepository monthlyReportRepository,
+        INotificationRepository notificationRepository,
         IEmailService emailService,
         IOptions<AppOptions> appOptions,
         ApplicationDbContext db)
@@ -50,6 +52,7 @@ public class CoupleInvitationService : ICoupleInvitationService
         _recurringTransactionRepository = recurringTransactionRepository;
         _savingsObjectiveRepository = savingsObjectiveRepository;
         _monthlyReportRepository = monthlyReportRepository;
+        _notificationRepository = notificationRepository;
         _emailService = emailService;
         _appOptions = appOptions.Value;
         _db = db;
@@ -72,7 +75,12 @@ public class CoupleInvitationService : ICoupleInvitationService
             throw new InvalidOperationException("Este agregado já tem dois membros.");
 
         if (members.Any(m => m.Email.Equals(emailNorm, StringComparison.OrdinalIgnoreCase)))
-            throw new InvalidOperationException("Este email já pertence ao teu agregado.");
+            throw new InvalidOperationException("Este email já pertence ao seu agregado.");
+
+        // O convite exige uma subscrição Couple já ativa (paga via Stripe) — não ativa o plano de graça.
+        var currentPlan = await _subscriptionService.GetActivePlanAsync(householdId, cancellationToken);
+        if (currentPlan != SubscriptionPlan.Couple)
+            throw new InvalidOperationException("Precisa do plano Couple ativo para convidar o seu parceiro.");
 
         // Um convite novo substitui qualquer convite pendente (incl. outro email), para permitir reenvio e testes.
         await _invitationRepository.RevokeAllPendingForHouseholdAsync(householdId, cancellationToken);
@@ -105,7 +113,7 @@ public class CoupleInvitationService : ICoupleInvitationService
             };
 
             await _emailService.SendCoupleInviteOtpAsync(emailNorm, inviterName, otp, cancellationToken);
-            await EnsureCouplePlanAndPersistInvitationAsync(householdId, invitation, cancellationToken);
+            await _invitationRepository.AddAsync(invitation, cancellationToken);
         }
         else
         {
@@ -130,23 +138,8 @@ public class CoupleInvitationService : ICoupleInvitationService
             var baseUrl = _appOptions.PublicBaseUrl.TrimEnd('/');
             var registerUrl = $"{baseUrl}/register?invite={Uri.EscapeDataString(rawToken)}";
             await _emailService.SendCoupleInviteLinkAsync(emailNorm, inviterName, registerUrl, cancellationToken);
-            await EnsureCouplePlanAndPersistInvitationAsync(householdId, invitation, cancellationToken);
+            await _invitationRepository.AddAsync(invitation, cancellationToken);
         }
-    }
-
-    /// <summary>
-    /// Só altera o plano para Couple e grava o convite depois do email ser enviado com sucesso.
-    /// </summary>
-    private async Task EnsureCouplePlanAndPersistInvitationAsync(
-        Guid householdId,
-        CoupleInvitation invitation,
-        CancellationToken cancellationToken)
-    {
-        var plan = await _subscriptionService.GetActivePlanAsync(householdId, cancellationToken);
-        if (plan != SubscriptionPlan.Couple)
-            await _subscriptionService.UpgradeAsync(householdId, SubscriptionPlan.Couple, cancellationToken);
-
-        await _invitationRepository.AddAsync(invitation, cancellationToken);
     }
 
     public async Task<ValidateInviteTokenResult> ValidateInviteTokenAsync(string rawToken, CancellationToken cancellationToken = default)
@@ -232,6 +225,10 @@ public class CoupleInvitationService : ICoupleInvitationService
         }
 
         await _invitationRepository.SaveChangesAsync(cancellationToken);
+
+        var invitee = await _userRepository.GetByEmailAsync(inv.InviteeEmail, cancellationToken);
+        await CreateCoupleAcceptedNotificationAsync(inv.Id, inv.InviterHouseholdId, inv.InviterUserId, inv.InviteeEmail, cancellationToken);
+        await CreateCoupleJoinedNotificationAsync(inv.Id, inv.InviterHouseholdId, inv.InviterUserId, invitee?.Id, cancellationToken);
     }
 
     public async Task VerifyOtpAndJoinAsync(Guid userId, string otpCode, bool migratePersonalData, CancellationToken cancellationToken = default)
@@ -264,7 +261,7 @@ public class CoupleInvitationService : ICoupleInvitationService
         var soleInMine = await _userRepository.GetByHouseholdIdAsync(oldHouseholdId, cancellationToken);
         if (soleInMine.Count != 1)
             throw new InvalidOperationException(
-                "Só podes aceitar o convite se fores o único membro do teu agregado atual.");
+                "Só pode aceitar o convite se for o único membro do seu agregado atual.");
 
         if (migratePersonalData)
         {
@@ -274,7 +271,7 @@ public class CoupleInvitationService : ICoupleInvitationService
         }
         else
         {
-            await EnsureInviteeHouseholdIsEmptyAsync(userId, cancellationToken);
+            await DeletePersonalHouseholdDataAsync(oldHouseholdId, cancellationToken);
             user.CoupleJoinDataMigrated = false;
         }
 
@@ -306,13 +303,66 @@ public class CoupleInvitationService : ICoupleInvitationService
                     await _householdRepository.DeleteAsync(oldH, cancellationToken);
             }
         }
+
+        await CreateCoupleAcceptedNotificationAsync(inv.Id, inv.InviterHouseholdId, inv.InviterUserId, user.Email, cancellationToken);
+        await CreateCoupleJoinedNotificationAsync(inv.Id, inv.InviterHouseholdId, inv.InviterUserId, userId, cancellationToken);
+    }
+
+    private async Task CreateCoupleAcceptedNotificationAsync(Guid invitationId, Guid householdId, Guid inviterUserId, string inviteeEmail, CancellationToken ct)
+    {
+        var dedupKey = $"couple-accepted:{invitationId}";
+        if (await _notificationRepository.ExistsByDeduplicationKeyAsync(dedupKey, ct))
+            return;
+
+        var invitee = await _userRepository.GetByEmailAsync(inviteeEmail, ct);
+        var name = invitee != null
+            ? $"{invitee.FirstName} {invitee.LastName}".Trim()
+            : inviteeEmail;
+        if (string.IsNullOrEmpty(name)) name = inviteeEmail;
+
+        await _notificationRepository.AddAsync(new Notification
+        {
+            Id = Guid.NewGuid(),
+            HouseholdId = householdId,
+            UserId = inviterUserId,
+            Type = NotificationType.CoupleInviteAccepted,
+            Message = $"{name} aceitou o convite e juntou-se ao agregado!",
+            RedirectUrl = "/household",
+            DeduplicationKey = dedupKey,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+    }
+
+    private async Task CreateCoupleJoinedNotificationAsync(Guid invitationId, Guid householdId, Guid inviterUserId, Guid? inviteeUserId, CancellationToken ct)
+    {
+        var dedupKey = $"couple-joined:{invitationId}";
+        if (await _notificationRepository.ExistsByDeduplicationKeyAsync(dedupKey, ct))
+            return;
+
+        var inviter = await _userRepository.GetByIdAsync(inviterUserId, ct);
+        var name = inviter != null
+            ? $"{inviter.FirstName} {inviter.LastName}".Trim()
+            : "o seu parceiro";
+        if (string.IsNullOrEmpty(name)) name = "o seu parceiro";
+
+        await _notificationRepository.AddAsync(new Notification
+        {
+            Id = Guid.NewGuid(),
+            HouseholdId = householdId,
+            UserId = inviteeUserId,
+            Type = NotificationType.CoupleInviteAccepted,
+            Message = $"Juntou-se ao agregado de {name}!",
+            RedirectUrl = "/household",
+            DeduplicationKey = dedupKey,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
     }
 
     private async Task<bool> HasPersonalHouseholdDataAsync(Guid householdId, CancellationToken cancellationToken)
     {
         var accounts = await _accountRepository.GetByHouseholdIdAsync(householdId, cancellationToken);
         if (accounts.Count > 0) return true;
-        var transactions = await _transactionRepository.GetByHouseholdAsync(householdId, null, null, null, cancellationToken);
+        var transactions = await _transactionRepository.GetByHouseholdAsync(householdId, null, null, null, limit: 1, cancellationToken);
         if (transactions.Count > 0) return true;
         var recurring = await _recurringTransactionRepository.GetByHouseholdAsync(householdId, cancellationToken);
         if (recurring.Count > 0) return true;
@@ -381,41 +431,46 @@ public class CoupleInvitationService : ICoupleInvitationService
                 .SetProperty(o => o.UpdatedAt, utc), cancellationToken);
     }
 
-    private async Task EnsureInviteeHouseholdIsEmptyAsync(Guid userId, CancellationToken cancellationToken)
+    private async Task DeletePersonalHouseholdDataAsync(Guid householdId, CancellationToken cancellationToken)
     {
-        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
-        if (user?.HouseholdId == null)
-            return;
+        var utc = DateTime.UtcNow;
 
-        var hid = user.HouseholdId.Value;
-        var members = await _userRepository.GetByHouseholdIdAsync(hid, cancellationToken);
-        if (members.Count != 1)
-            throw new InvalidOperationException(
-                "Só podes aceitar o convite se fores o único membro do teu agregado atual.");
+        // Remove PrimaryAccountId FK before deleting accounts
+        var household = await _db.Households.FirstOrDefaultAsync(h => h.Id == householdId, cancellationToken);
+        if (household != null)
+        {
+            household.PrimaryAccountId = null;
+            household.UpdatedAt = utc;
+            await _db.SaveChangesAsync(cancellationToken);
+        }
 
-        var accounts = await _accountRepository.GetByHouseholdIdAsync(hid, cancellationToken);
-        if (accounts.Count > 0)
-            throw new InvalidOperationException(
-                "Remove as contas do teu agregado atual antes de aceitar o convite (ou exporta os dados).");
+        // Delete all household data
+        await _db.Transactions
+            .Where(t => t.HouseholdId == householdId)
+            .ExecuteDeleteAsync(cancellationToken);
 
-        var transactions = await _transactionRepository.GetByHouseholdAsync(hid, null, null, null, cancellationToken);
-        if (transactions.Count > 0)
-            throw new InvalidOperationException(
-                "O teu agregado atual tem movimentos. Remove-os ou exporta antes de aceitar o convite.");
+        await _db.RecurringTransactions
+            .Where(rt => rt.HouseholdId == householdId)
+            .ExecuteDeleteAsync(cancellationToken);
 
-        var recurring = await _recurringTransactionRepository.GetByHouseholdAsync(hid, cancellationToken);
-        if (recurring.Count > 0)
-            throw new InvalidOperationException(
-                "O teu agregado atual tem recorrentes. Remove-as antes de aceitar o convite.");
+        await _db.Accounts
+            .Where(a => a.HouseholdId == householdId)
+            .ExecuteDeleteAsync(cancellationToken);
 
-        var objectives = await _savingsObjectiveRepository.GetByHouseholdAsync(hid, cancellationToken);
-        if (objectives.Count > 0)
-            throw new InvalidOperationException(
-                "O teu agregado atual tem objetivos de poupança. Remove-os antes de aceitar o convite.");
+        await _db.SavingsObjectives
+            .Where(o => o.HouseholdId == householdId)
+            .ExecuteDeleteAsync(cancellationToken);
 
-        var reports = await _monthlyReportRepository.ListByHouseholdAsync(hid, null, null, cancellationToken);
-        if (reports.Count > 0)
-            throw new InvalidOperationException(
-                "O teu agregado atual tem relatórios. Contacta o suporte se precisares de os migrar.");
+        await _db.MonthlyReports
+            .Where(r => r.HouseholdId == householdId)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        await _db.MonthlyBudgets
+            .Where(b => b.HouseholdId == householdId)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        await _db.Notifications
+            .Where(n => n.HouseholdId == householdId)
+            .ExecuteDeleteAsync(cancellationToken);
     }
 }

@@ -102,9 +102,9 @@ public class RecurringAccountBalanceService : IRecurringAccountBalanceService
                     if (!IsActiveInMonth(r, y, mo))
                         continue;
 
-                    var amount = r.Frequency == RecurringFrequency.Annual
-                        ? Math.Round(r.Amount / 12m, 2)
-                        : r.Amount;
+                    var amount = r.AmountForMonth(mo);
+                    if (amount == 0m)
+                        continue;
 
                     if (r.Type == TransactionType.Transfer)
                     {
@@ -137,9 +137,5 @@ public class RecurringAccountBalanceService : IRecurringAccountBalanceService
     }
 
     private static bool IsActiveInMonth(RecurringTransaction r, int y, int m)
-    {
-        var started = r.StartYear < y || (r.StartYear == y && r.StartMonth <= m);
-        var notEnded = r.EndYear == null || r.EndYear > y || (r.EndYear == y && r.EndMonth > m);
-        return started && notEnded;
-    }
+        => r.IsActiveInMonth(y, m);
 }

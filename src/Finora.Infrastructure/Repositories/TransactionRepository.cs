@@ -29,7 +29,7 @@ public class TransactionRepository : ITransactionRepository
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<Transaction>> GetByHouseholdAsync(Guid householdId, Guid? accountId, DateTime? from, DateTime? to, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Transaction>> GetByHouseholdAsync(Guid householdId, Guid? accountId, DateTime? from, DateTime? to, int? limit = null, CancellationToken cancellationToken = default)
     {
         var query = _context.Transactions
             .Include(t => t.Splits)
@@ -45,10 +45,58 @@ public class TransactionRepository : ITransactionRepository
         if (to.HasValue)
             query = query.Where(t => t.Date <= to.Value);
 
-        return await query
+        var ordered = query
+            .OrderByDescending(t => t.Date)
+            .ThenByDescending(t => t.CreatedAt);
+
+        if (limit.HasValue && limit.Value > 0)
+            return await ordered.Take(limit.Value).ToListAsync(cancellationToken);
+
+        return await ordered.ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Transaction>> SearchAsync(Guid householdId, string query, IReadOnlyCollection<Domain.Enums.TransactionCategory> categories, int limit, CancellationToken cancellationToken = default)
+    {
+        var like = $"%{query.Trim()}%";
+        var hasCategories = categories.Count > 0;
+        return await _context.Transactions
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId
+                && ((t.Description != null && EF.Functions.ILike(t.Description, like))
+                    || (t.EntityName != null && EF.Functions.ILike(t.EntityName, like))
+                    || (hasCategories && categories.Contains(t.Category))))
             .OrderByDescending(t => t.Date)
             .ThenByDescending(t => t.CreatedAt)
+            .Take(limit)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<(IReadOnlyList<Transaction> Items, int TotalCount)> GetByHouseholdPagedAsync(Guid householdId, Guid? accountId, DateTime? from, DateTime? to, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var query = _context.Transactions
+            .Include(t => t.Splits)
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId);
+
+        if (accountId.HasValue)
+            query = query.Where(t => t.AccountId == accountId.Value || t.DestinationAccountId == accountId.Value);
+
+        if (from.HasValue)
+            query = query.Where(t => t.Date >= from.Value);
+
+        if (to.HasValue)
+            query = query.Where(t => t.Date <= to.Value);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        var items = await query
+            .OrderByDescending(t => t.Date)
+            .ThenByDescending(t => t.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return (items, totalCount);
     }
 
     public async Task<IReadOnlyDictionary<Guid, DateTime>> GetMinTransactionDateByAccountAsync(

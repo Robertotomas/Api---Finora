@@ -17,6 +17,13 @@ public class User : BaseEntity
     /// <summary>IANA timezone id (e.g. Europe/Lisbon) for scheduling monthly reports.</summary>
     public string? TimeZoneId { get; set; }
 
+    /// <summary>
+    /// True once the user confirmed ownership of their email via the link sent on registration.
+    /// Login is blocked until this is true. Couple guests are auto-confirmed (they proved
+    /// ownership by receiving the emailed invite link/OTP).
+    /// </summary>
+    public bool EmailConfirmed { get; set; }
+
     // Account lockout
     public int FailedLoginAttempts { get; set; }
     public DateTime? LockedUntil { get; set; }

@@ -15,6 +15,7 @@ public class HouseholdService : IHouseholdService
     private readonly IUserRepository _userRepository;
     private readonly ISubscriptionService _subscriptionService;
     private readonly IAccountRepository _accountRepository;
+    private readonly INotificationRepository _notificationRepository;
     private readonly IHostEnvironment _hostEnvironment;
 
     public HouseholdService(
@@ -23,6 +24,7 @@ public class HouseholdService : IHouseholdService
         IUserRepository userRepository,
         ISubscriptionService subscriptionService,
         IAccountRepository accountRepository,
+        INotificationRepository notificationRepository,
         IHostEnvironment hostEnvironment)
     {
         _db = db;
@@ -30,6 +32,7 @@ public class HouseholdService : IHouseholdService
         _userRepository = userRepository;
         _subscriptionService = subscriptionService;
         _accountRepository = accountRepository;
+        _notificationRepository = notificationRepository;
         _hostEnvironment = hostEnvironment;
     }
 
@@ -140,7 +143,7 @@ public class HouseholdService : IHouseholdService
                 ?? throw new InvalidOperationException("Agregado não encontrado.");
 
             if (household.Type != HouseholdType.Couple)
-                throw new InvalidOperationException("Só podes sair quando o agregado está no plano casal.");
+                throw new InvalidOperationException("Só pode sair quando o agregado está no plano casal.");
 
             var members = await _db.Users.Where(u => u.HouseholdId == household.Id).ToListAsync(cancellationToken);
             var now = DateTime.UtcNow;
@@ -157,6 +160,7 @@ public class HouseholdService : IHouseholdService
             var subs = await _db.Subscriptions
                 .Where(s => s.HouseholdId == household.Id && s.Status == SubscriptionStatus.Active)
                 .ToListAsync(cancellationToken);
+            var cancelledSubId = subs.FirstOrDefault()?.Id;
             foreach (var sub in subs)
             {
                 sub.Status = SubscriptionStatus.Cancelled;
@@ -165,6 +169,9 @@ public class HouseholdService : IHouseholdService
 
             household.Type = HouseholdType.Individual;
             household.UpdatedAt = now;
+
+            var oldHouseholdId = household.Id;
+            var partner = members.FirstOrDefault(m => m.Id != userId);
 
             if (members.Count >= 2)
             {
@@ -188,6 +195,51 @@ public class HouseholdService : IHouseholdService
 
             await _db.SaveChangesAsync(cancellationToken);
             await tx.CommitAsync(cancellationToken);
+
+            // Notify both members after couple split
+            var dedupBase = $"couple-cancelled:{oldHouseholdId}:{cancelledSubId ?? Guid.Empty}";
+
+            // Notify the partner who stayed in the old household
+            if (partner != null)
+            {
+                var dedupKey = $"{dedupBase}:{partner.Id}";
+                if (!await _notificationRepository.ExistsByDeduplicationKeyAsync(dedupKey, cancellationToken))
+                {
+                    var leaverName = $"{user.FirstName} {user.LastName}".Trim();
+                    if (string.IsNullOrEmpty(leaverName)) leaverName = user.Email;
+
+                    await _notificationRepository.AddAsync(new Notification
+                    {
+                        Id = Guid.NewGuid(),
+                        HouseholdId = oldHouseholdId,
+                        UserId = partner.Id,
+                        Type = NotificationType.SubscriptionExpired,
+                        Message = $"{leaverName} saiu do agregado. O plano Couple foi cancelado.",
+                        RedirectUrl = "/subscription",
+                        DeduplicationKey = dedupKey,
+                        CreatedAt = now
+                    }, cancellationToken);
+                }
+            }
+
+            // Notify the user who left (now in their new household)
+            {
+                var dedupKey = $"{dedupBase}:{userId}";
+                if (!await _notificationRepository.ExistsByDeduplicationKeyAsync(dedupKey, cancellationToken))
+                {
+                    await _notificationRepository.AddAsync(new Notification
+                    {
+                        Id = Guid.NewGuid(),
+                        HouseholdId = user.HouseholdId!.Value,
+                        UserId = userId,
+                        Type = NotificationType.SubscriptionExpired,
+                        Message = "Saíste do agregado. O plano Couple foi cancelado.",
+                        RedirectUrl = "/subscription",
+                        DeduplicationKey = dedupKey,
+                        CreatedAt = now
+                    }, cancellationToken);
+                }
+            }
         }
         catch
         {
@@ -219,7 +271,7 @@ public class HouseholdService : IHouseholdService
     {
         const string expected = "RECOMECAR";
         if (!string.Equals(confirmPhrase.Trim(), expected, StringComparison.Ordinal))
-            throw new InvalidOperationException($"Escreve exatamente {expected} para confirmar.");
+            throw new InvalidOperationException($"Escreva exatamente {expected} para confirmar.");
 
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
             ?? throw new InvalidOperationException("Utilizador não encontrado.");

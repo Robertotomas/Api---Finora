@@ -22,6 +22,12 @@ public class ApplicationDbContext : DbContext
     public DbSet<MonthlyReport> MonthlyReports => Set<MonthlyReport>();
     public DbSet<CoupleInvitation> CoupleInvitations => Set<CoupleInvitation>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
+    public DbSet<EmailConfirmationToken> EmailConfirmationTokens => Set<EmailConfirmationToken>();
+    public DbSet<MonthlyBudget> MonthlyBudgets => Set<MonthlyBudget>();
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<Asset> Assets => Set<Asset>();
+    public DbSet<AssetValuation> AssetValuations => Set<AssetValuation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,6 +38,7 @@ public class ApplicationDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Name).HasMaxLength(200);
             entity.Property(e => e.Type).HasConversion<int>();
+            entity.Property(e => e.StripeCustomerId).HasMaxLength(255);
 
             entity.HasOne(e => e.PrimaryAccount)
                 .WithMany()
@@ -65,6 +72,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Type).HasConversion<int>();
             entity.Property(e => e.Balance).HasPrecision(18, 2);
             entity.Property(e => e.Currency).HasMaxLength(3);
+            entity.Property(e => e.LogoDomain).HasMaxLength(500);
 
             entity.HasOne(e => e.Household)
                 .WithMany(h => h.Accounts)
@@ -79,6 +87,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Category).HasConversion<int>();
             entity.Property(e => e.Amount).HasPrecision(18, 2);
             entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.EntityType).HasConversion<int>();
+            entity.Property(e => e.EntityName).HasMaxLength(200);
 
             entity.HasOne(e => e.Account)
                 .WithMany(a => a.Transactions)
@@ -120,6 +130,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Category).HasConversion<int>();
             entity.Property(e => e.Amount).HasPrecision(18, 2);
             entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.EntityType).HasConversion<int>();
+            entity.Property(e => e.EntityName).HasMaxLength(200);
 
             entity.HasOne(e => e.Account)
                 .WithMany()
@@ -130,6 +142,12 @@ public class ApplicationDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.DestinationAccountId)
                 .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired(false);
+
+            entity.HasOne(e => e.ResponsibleUser)
+                .WithMany()
+                .HasForeignKey(e => e.ResponsibleUserId)
+                .OnDelete(DeleteBehavior.SetNull)
                 .IsRequired(false);
 
             entity.HasOne(e => e.Household)
@@ -159,6 +177,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Plan).HasConversion<int>();
             entity.Property(e => e.Status).HasConversion<int>();
             entity.Property(e => e.ExpiresAt);
+            entity.Property(e => e.StripeSubscriptionId).HasMaxLength(255);
 
             entity.HasOne(e => e.Household)
                 .WithMany(h => h.Subscriptions)
@@ -170,10 +189,24 @@ public class ApplicationDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.FileRelativePath).HasMaxLength(500);
+            entity.Property(e => e.TemplateVersion).HasDefaultValue(0);
             entity.HasIndex(e => new { e.HouseholdId, e.Year, e.Month }).IsUnique();
 
             entity.HasOne(e => e.Household)
                 .WithMany(h => h.MonthlyReports)
+                .HasForeignKey(e => e.HouseholdId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<MonthlyBudget>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ExpectedIncome).HasPrecision(18, 2);
+            entity.Property(e => e.ExpectedExpenses).HasPrecision(18, 2);
+            entity.HasIndex(e => new { e.HouseholdId, e.Year, e.Month }).IsUnique();
+
+            entity.HasOne(e => e.Household)
+                .WithMany(h => h.MonthlyBudgets)
                 .HasForeignKey(e => e.HouseholdId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
@@ -188,6 +221,80 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(e => e.User)
                 .WithMany()
                 .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PasswordResetToken>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TokenHash).HasMaxLength(64);
+            entity.HasIndex(e => e.TokenHash);
+            entity.HasIndex(e => e.UserId);
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<EmailConfirmationToken>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TokenHash).HasMaxLength(64);
+            entity.HasIndex(e => e.TokenHash);
+            entity.HasIndex(e => e.UserId);
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Type).HasConversion<int>();
+            entity.Property(e => e.Message).HasMaxLength(500);
+            entity.Property(e => e.RedirectUrl).HasMaxLength(300);
+            entity.Property(e => e.DeduplicationKey).HasMaxLength(200);
+            entity.HasIndex(e => new { e.HouseholdId, e.IsRead, e.CreatedAt });
+            entity.HasIndex(e => e.DeduplicationKey).IsUnique().HasFilter("\"DeduplicationKey\" IS NOT NULL");
+
+            entity.HasOne(e => e.Household)
+                .WithMany()
+                .HasForeignKey(e => e.HouseholdId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<Asset>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).HasMaxLength(200);
+            entity.Property(e => e.Category).HasConversion<int>();
+            entity.Property(e => e.AcquisitionCost).HasPrecision(18, 2);
+            entity.Property(e => e.Currency).HasMaxLength(3);
+            entity.HasIndex(e => e.HouseholdId);
+
+            entity.HasOne(e => e.Household)
+                .WithMany(h => h.Assets)
+                .HasForeignKey(e => e.HouseholdId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AssetValuation>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Value).HasPrecision(18, 2);
+            entity.HasIndex(e => new { e.AssetId, e.Date });
+
+            entity.HasOne(e => e.Asset)
+                .WithMany(a => a.Valuations)
+                .HasForeignKey(e => e.AssetId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

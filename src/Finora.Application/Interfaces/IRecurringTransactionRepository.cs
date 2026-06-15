@@ -1,4 +1,5 @@
 using Finora.Domain.Entities;
+using Finora.Domain.Enums;
 
 namespace Finora.Application.Interfaces;
 
@@ -7,6 +8,8 @@ public interface IRecurringTransactionRepository
     Task<RecurringTransaction?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<RecurringTransaction?> GetByIdTrackedAsync(Guid id, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RecurringTransaction>> GetByHouseholdAsync(Guid householdId, CancellationToken cancellationToken = default);
+    /// <summary>Text search over description/entity name (plus matching categories) for the household.</summary>
+    Task<IReadOnlyList<RecurringTransaction>> SearchAsync(Guid householdId, string query, IReadOnlyCollection<TransactionCategory> categories, int limit, CancellationToken cancellationToken = default);
     /// <summary>Gets recurring transactions active in the given month.</summary>
     Task<IReadOnlyList<RecurringTransaction>> GetActiveForMonthAsync(Guid householdId, int year, int month, CancellationToken cancellationToken = default);
     /// <summary>Gets income and expenses totals from recurring for each month in the range.</summary>

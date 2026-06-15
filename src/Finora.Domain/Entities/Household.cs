@@ -15,10 +15,15 @@ public class Household : BaseEntity
     /// <summary>Set when another member leaves a Couple household; the remaining member(s) see assistance to keep or reset shared data.</summary>
     public DateTime? PartnerLeftNoticeAtUtc { get; set; }
 
+    /// <summary>Stripe Customer id for this household (one customer per household). Set on first checkout/portal use.</summary>
+    public string? StripeCustomerId { get; set; }
+
     public ICollection<User> Users { get; set; } = new List<User>();
     public ICollection<Account> Accounts { get; set; } = new List<Account>();
     public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
     public ICollection<SavingsObjective> SavingsObjectives { get; set; } = new List<SavingsObjective>();
     public ICollection<Subscription> Subscriptions { get; set; } = new List<Subscription>();
     public ICollection<MonthlyReport> MonthlyReports { get; set; } = new List<MonthlyReport>();
+    public ICollection<MonthlyBudget> MonthlyBudgets { get; set; } = new List<MonthlyBudget>();
+    public ICollection<Asset> Assets { get; set; } = new List<Asset>();
 }

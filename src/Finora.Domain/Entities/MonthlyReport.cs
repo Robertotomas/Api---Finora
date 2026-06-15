@@ -19,4 +19,11 @@ public class MonthlyReport : BaseEntity
     public string FileRelativePath { get; set; } = string.Empty;
 
     public long? FileSizeBytes { get; set; }
+
+    /// <summary>
+    /// Version of the HTML/PDF template used to render this report. When the layout changes,
+    /// <c>MonthlyReportGenerationService.CurrentTemplateVersion</c> is bumped and the background
+    /// generator re-renders any report whose stored version is lower. 0 = legacy (pre-versioning).
+    /// </summary>
+    public int TemplateVersion { get; set; }
 }

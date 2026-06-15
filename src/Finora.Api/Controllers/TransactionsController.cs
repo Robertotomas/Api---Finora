@@ -59,12 +59,14 @@ public class TransactionsController : ControllerBase
     /// <param name="accountId">Optional filter by account.</param>
     /// <param name="from">Optional start date (yyyy-MM-dd, inclusive).</param>
     /// <param name="to">Optional end date (yyyy-MM-dd, inclusive).</param>
+    /// <param name="limit">Optional max number of results (e.g. 5 for dashboard preview).</param>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<TransactionDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<TransactionDto>>> GetAll(
         [FromQuery] Guid? accountId,
         [FromQuery] string? from,
         [FromQuery] string? to,
+        [FromQuery] int? limit,
         CancellationToken cancellationToken)
     {
         if (UserId == null)
@@ -81,8 +83,43 @@ public class TransactionsController : ControllerBase
         if (!string.IsNullOrWhiteSpace(to) && DateTime.TryParse(to, out var td))
             toDate = DateTime.SpecifyKind(td.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
 
-        var transactions = await _transactionService.GetByHouseholdAsync(householdId.Value, UserId!.Value, accountId, fromDate, toDate, cancellationToken);
+        var transactions = await _transactionService.GetByHouseholdAsync(householdId.Value, UserId!.Value, accountId, fromDate, toDate, limit, cancellationToken);
         return Ok(transactions);
+    }
+
+    /// <summary>
+    /// Get paginated transactions for the current user's household.
+    /// </summary>
+    [HttpGet("paged")]
+    public async Task<IActionResult> GetPaged(
+        [FromQuery] Guid? accountId,
+        [FromQuery] string? from,
+        [FromQuery] string? to,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 15,
+        CancellationToken cancellationToken = default)
+    {
+        if (UserId == null)
+            return NotFound();
+
+        var householdId = await ResolveHouseholdIdAsync(cancellationToken);
+        if (householdId == null)
+            return NotFound();
+
+        DateTime? fromDate = null;
+        DateTime? toDate = null;
+        if (!string.IsNullOrWhiteSpace(from) && DateTime.TryParse(from, out var fd))
+            fromDate = DateTime.SpecifyKind(fd.Date, DateTimeKind.Utc);
+        if (!string.IsNullOrWhiteSpace(to) && DateTime.TryParse(to, out var td))
+            toDate = DateTime.SpecifyKind(td.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
+
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var (items, totalCount) = await _transactionService.GetByHouseholdPagedAsync(
+            householdId.Value, UserId!.Value, accountId, fromDate, toDate, page, pageSize, cancellationToken);
+
+        return Ok(new { items, totalCount, page, pageSize, totalPages = (int)Math.Ceiling((double)totalCount / pageSize) });
     }
 
     /// <summary>
@@ -118,10 +155,10 @@ public class TransactionsController : ControllerBase
 
         var (_, needsPrimary, _) = await _subscriptionService.GetFreeMultiAccountStateAsync(householdId.Value, cancellationToken);
         if (needsPrimary)
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_PRIMARY_REQUIRED", message = "Tens mais do que uma conta no plano Free. Escolhe a conta principal em Contas antes de adicionar movimentos." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_PRIMARY_REQUIRED", message = "Tem mais do que uma conta no plano Free. Escolha a conta principal em Contas antes de adicionar movimentos." });
 
         if (!await _subscriptionService.CanUseAccountForActivityAsync(householdId.Value, request.AccountId, cancellationToken))
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_ACCOUNT_LOCKED", message = "No plano Free só podes usar a conta principal. Altera a conta principal em Contas ou elimina contas extra." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_ACCOUNT_LOCKED", message = "No plano Free só pode usar a conta principal. Altere a conta principal em Contas ou elimine contas extra." });
 
         if (!await _subscriptionService.CanAddTransactionAsync(
                 householdId.Value,
@@ -129,7 +166,7 @@ public class TransactionsController : ControllerBase
                 request.Date.Year,
                 request.Date.Month,
                 cancellationToken))
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free só podes adicionar 1 receita e 5 despesas por mês." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "PLAN_LIMIT", message = "No plano Free só pode adicionar 1 receita e 5 despesas por mês." });
 
         var transaction = await _transactionService.CreateAsync(request, householdId.Value, UserId.Value, cancellationToken);
         return transaction == null ? NotFound() : CreatedAtAction(nameof(GetById), new { id = transaction.Id }, transaction);
@@ -153,11 +190,11 @@ public class TransactionsController : ControllerBase
 
         var (_, needsPrimary, _) = await _subscriptionService.GetFreeMultiAccountStateAsync(existing.HouseholdId, cancellationToken);
         if (needsPrimary)
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_PRIMARY_REQUIRED", message = "Tens mais do que uma conta no plano Free. Escolhe a conta principal em Contas antes de editar movimentos." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_PRIMARY_REQUIRED", message = "Tem mais do que uma conta no plano Free. Escolha a conta principal em Contas antes de editar movimentos." });
 
         if (!await _subscriptionService.CanUseAccountForActivityAsync(existing.HouseholdId, existing.AccountId, cancellationToken)
             || !await _subscriptionService.CanUseAccountForActivityAsync(existing.HouseholdId, request.AccountId, cancellationToken))
-            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_ACCOUNT_LOCKED", message = "No plano Free só podes alterar movimentos na conta principal." });
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "FREE_ACCOUNT_LOCKED", message = "No plano Free só pode alterar movimentos na conta principal." });
 
         var transaction = await _transactionService.UpdateAsync(id, request, UserId.Value, cancellationToken);
         return transaction == null ? NotFound() : Ok(transaction);

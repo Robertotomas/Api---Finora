@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Finora.Application.DTOs.Auth;
+using Finora.Application.Exceptions;
 using Finora.Application.Interfaces;
 using Finora.Application.Options;
 using Finora.Domain.Entities;
@@ -20,30 +21,38 @@ public class AuthService : IAuthService
     private readonly IHouseholdRepository _householdRepository;
     private readonly ISubscriptionRepository _subscriptionRepository;
     private readonly ICoupleInvitationService _coupleInvitationService;
+    private readonly IEmailService _emailService;
     private readonly ApplicationDbContext _dbContext;
     private readonly JwtOptions _jwtOptions;
+    private readonly AppOptions _appOptions;
 
     private const int MaxFailedAttempts = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan RefreshTokenLifetime = TimeSpan.FromDays(30);
+    private static readonly TimeSpan PasswordResetLifetime = TimeSpan.FromHours(1);
+    private static readonly TimeSpan EmailConfirmationLifetime = TimeSpan.FromHours(24);
 
     public AuthService(
         IUserRepository userRepository,
         IHouseholdRepository householdRepository,
         ISubscriptionRepository subscriptionRepository,
         ICoupleInvitationService coupleInvitationService,
+        IEmailService emailService,
         ApplicationDbContext dbContext,
-        IOptions<JwtOptions> jwtOptions)
+        IOptions<JwtOptions> jwtOptions,
+        IOptions<AppOptions> appOptions)
     {
         _userRepository = userRepository;
         _householdRepository = householdRepository;
         _subscriptionRepository = subscriptionRepository;
         _coupleInvitationService = coupleInvitationService;
+        _emailService = emailService;
         _dbContext = dbContext;
         _jwtOptions = jwtOptions.Value;
+        _appOptions = appOptions.Value;
     }
 
-    public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
+    public async Task<RegisterResult> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
         var emailNorm = request.Email.Trim().ToLowerInvariant();
 
@@ -64,15 +73,19 @@ public class AuthService : IAuthService
                 FirstName = request.FirstName.Trim(),
                 LastName = request.LastName.Trim(),
                 Gender = request.Gender,
+                TimeZoneId = NormalizeTimeZone(request.TimeZoneId),
                 HouseholdId = ctx.TargetHouseholdId,
                 IsCoupleGuest = true,
                 CoupleJoinDataMigrated = null,
+                // Convite de casal: o email já foi provado ao receber o link/OTP → auto-confirmado.
+                EmailConfirmed = true,
                 CreatedAt = DateTime.UtcNow
             };
 
             await _userRepository.CreateAsync(invitedUser, cancellationToken);
             await _coupleInvitationService.CompleteNewUserInviteAsync(ctx.InvitationId, cancellationToken);
-            return await GenerateAuthResponseAsync(invitedUser, cancellationToken);
+            var auth = await GenerateAuthResponseAsync(invitedUser, cancellationToken);
+            return new RegisterResult { RequiresEmailConfirmation = false, Auth = auth, Email = invitedUser.Email };
         }
 
         if (await _userRepository.ExistsByEmailAsync(request.Email, cancellationToken))
@@ -106,13 +119,27 @@ public class AuthService : IAuthService
             FirstName = request.FirstName.Trim(),
             LastName = request.LastName.Trim(),
             Gender = request.Gender,
+            TimeZoneId = NormalizeTimeZone(request.TimeZoneId),
             HouseholdId = household.Id,
+            // Registo normal: só pode entrar depois de confirmar o email.
+            EmailConfirmed = false,
             CreatedAt = DateTime.UtcNow
         };
 
         await _userRepository.CreateAsync(user, cancellationToken);
 
-        return await GenerateAuthResponseAsync(user, cancellationToken);
+        // A conta já existe; se o envio do email falhar, o utilizador pode reenviar a partir
+        // do ecrã de confirmação ou do login. Não fazemos a criação da conta depender disso.
+        try
+        {
+            await IssueEmailConfirmationAsync(user, cancellationToken);
+        }
+        catch
+        {
+            // ignorado de propósito (ver comentário acima)
+        }
+
+        return new RegisterResult { RequiresEmailConfirmation = true, Email = user.Email };
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
@@ -121,7 +148,7 @@ public class AuthService : IAuthService
             .FirstOrDefaultAsync(u => u.Email.ToLower() == request.Email.ToLower(), cancellationToken);
 
         if (user == null)
-            throw new UnauthorizedAccessException("Invalid email or password.");
+            throw new UnauthorizedAccessException("Email ou palavra-passe incorretos.");
 
         // Check lockout
         if (user.LockedUntil.HasValue && user.LockedUntil.Value > DateTime.UtcNow)
@@ -142,16 +169,34 @@ public class AuthService : IAuthService
                 throw new UnauthorizedAccessException($"Conta bloqueada por {(int)LockoutDuration.TotalMinutes} minutos após demasiadas tentativas falhadas.");
             }
             await _dbContext.SaveChangesAsync(cancellationToken);
-            throw new UnauthorizedAccessException("Invalid email or password.");
+            throw new UnauthorizedAccessException("Email ou palavra-passe incorretos.");
         }
 
+        // Password correta: bloquear se o email ainda não foi confirmado.
+        // (Verificado só após a password para não revelar o estado a quem erra a password.)
+        if (!user.EmailConfirmed)
+            throw new EmailNotConfirmedException(user.Email);
+
         // Reset on success
+        var needsSave = false;
         if (user.FailedLoginAttempts > 0 || user.LockedUntil.HasValue)
         {
             user.FailedLoginAttempts = 0;
             user.LockedUntil = null;
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            needsSave = true;
         }
+
+        // Update timezone from browser on each login
+        var tz = NormalizeTimeZone(request.TimeZoneId);
+        if (tz != null && tz != user.TimeZoneId)
+        {
+            user.TimeZoneId = tz;
+            user.UpdatedAt = DateTime.UtcNow;
+            needsSave = true;
+        }
+
+        if (needsSave)
+            await _dbContext.SaveChangesAsync(cancellationToken);
 
         return await GenerateAuthResponseAsync(user, cancellationToken);
     }
@@ -188,6 +233,139 @@ public class AuthService : IAuthService
         return await GenerateAuthResponseAsync(user, cancellationToken);
     }
 
+    public async Task RequestPasswordResetAsync(string email, CancellationToken cancellationToken = default)
+    {
+        var emailNorm = email.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(emailNorm))
+            return;
+
+        var user = await _dbContext.Users
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == emailNorm, cancellationToken);
+
+        // No email enumeration: silently succeed when the account does not exist.
+        if (user == null)
+            return;
+
+        // Invalidate any previous pending reset tokens for this user.
+        await _dbContext.PasswordResetTokens
+            .Where(t => t.UserId == user.Id && !t.IsRevoked && t.UsedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.IsRevoked, true), cancellationToken);
+
+        var rawToken = InviteTokenHelper.GenerateRawToken();
+        var resetToken = new PasswordResetToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            TokenHash = InviteTokenHelper.Hash(rawToken),
+            ExpiresAt = DateTime.UtcNow.Add(PasswordResetLifetime),
+            IsRevoked = false,
+            CreatedAt = DateTime.UtcNow
+        };
+        _dbContext.PasswordResetTokens.Add(resetToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var baseUrl = _appOptions.PublicBaseUrl.TrimEnd('/');
+        var resetUrl = $"{baseUrl}/reset-password?token={Uri.EscapeDataString(rawToken)}";
+        await _emailService.SendPasswordResetLinkAsync(emailNorm, resetUrl, cancellationToken);
+    }
+
+    public async Task ResetPasswordAsync(string rawToken, string newPassword, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(rawToken))
+            throw new InvalidOperationException("Pedido inválido ou expirado.");
+
+        var hash = InviteTokenHelper.Hash(rawToken.Trim());
+
+        var token = await _dbContext.PasswordResetTokens
+            .Include(t => t.User)
+            .FirstOrDefaultAsync(t => t.TokenHash == hash && !t.IsRevoked && t.UsedAt == null, cancellationToken);
+
+        if (token == null || token.User == null || token.ExpiresAt < DateTime.UtcNow)
+            throw new InvalidOperationException("Pedido inválido ou expirado.");
+
+        var user = token.User;
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword, BCrypt.Net.BCrypt.GenerateSalt(10));
+        user.FailedLoginAttempts = 0;
+        user.LockedUntil = null;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        token.UsedAt = DateTime.UtcNow;
+        token.IsRevoked = true;
+        token.UpdatedAt = DateTime.UtcNow;
+
+        // Revoke all active sessions: the user must re-login with the new password.
+        await _dbContext.RefreshTokens
+            .Where(rt => rt.UserId == user.Id && !rt.IsRevoked)
+            .ExecuteUpdateAsync(s => s.SetProperty(rt => rt.IsRevoked, true), cancellationToken);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task RequestEmailConfirmationAsync(string email, CancellationToken cancellationToken = default)
+    {
+        var emailNorm = email.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(emailNorm))
+            return;
+
+        var user = await _dbContext.Users
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == emailNorm, cancellationToken);
+
+        // Sem enumeração de emails: completa em silêncio se não existir ou já estiver confirmado.
+        if (user == null || user.EmailConfirmed)
+            return;
+
+        await IssueEmailConfirmationAsync(user, cancellationToken);
+    }
+
+    public async Task ConfirmEmailAsync(string rawToken, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(rawToken))
+            throw new InvalidOperationException("Pedido inválido ou expirado.");
+
+        var hash = InviteTokenHelper.Hash(rawToken.Trim());
+
+        var token = await _dbContext.EmailConfirmationTokens
+            .Include(t => t.User)
+            .FirstOrDefaultAsync(t => t.TokenHash == hash && !t.IsRevoked && t.UsedAt == null, cancellationToken);
+
+        if (token == null || token.User == null || token.ExpiresAt < DateTime.UtcNow)
+            throw new InvalidOperationException("Pedido inválido ou expirado.");
+
+        var user = token.User;
+        user.EmailConfirmed = true;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        token.UsedAt = DateTime.UtcNow;
+        token.IsRevoked = true;
+        token.UpdatedAt = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>Cria um novo token de confirmação (invalidando os pendentes) e envia o email.</summary>
+    private async Task IssueEmailConfirmationAsync(User user, CancellationToken cancellationToken)
+    {
+        await _dbContext.EmailConfirmationTokens
+            .Where(t => t.UserId == user.Id && !t.IsRevoked && t.UsedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.IsRevoked, true), cancellationToken);
+
+        var rawToken = InviteTokenHelper.GenerateRawToken();
+        _dbContext.EmailConfirmationTokens.Add(new EmailConfirmationToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            TokenHash = InviteTokenHelper.Hash(rawToken),
+            ExpiresAt = DateTime.UtcNow.Add(EmailConfirmationLifetime),
+            IsRevoked = false,
+            CreatedAt = DateTime.UtcNow
+        });
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var baseUrl = _appOptions.PublicBaseUrl.TrimEnd('/');
+        var confirmUrl = $"{baseUrl}/confirm-email?token={Uri.EscapeDataString(rawToken)}";
+        await _emailService.SendEmailConfirmationLinkAsync(user.Email, confirmUrl, cancellationToken);
+    }
+
     public async Task<UserDto?> GetProfileAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
@@ -219,7 +397,8 @@ public class AuthService : IAuthService
         HouseholdId = user.HouseholdId,
         TimeZoneId = user.TimeZoneId,
         IsCoupleGuest = user.IsCoupleGuest,
-        CoupleJoinDataMigrated = user.CoupleJoinDataMigrated
+        CoupleJoinDataMigrated = user.CoupleJoinDataMigrated,
+        EmailConfirmed = user.EmailConfirmed
     };
 
     private async Task<AuthResponse> GenerateAuthResponseAsync(User user, CancellationToken cancellationToken)
@@ -287,5 +466,21 @@ public class AuthService : IAuthService
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
         return Convert.ToHexStringLower(bytes);
+    }
+
+    /// <summary>Validates the IANA timezone id; returns null if invalid/empty.</summary>
+    private static string? NormalizeTimeZone(string? timeZoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timeZoneId)) return null;
+        var trimmed = timeZoneId.Trim();
+        try
+        {
+            TimeZoneInfo.FindSystemTimeZoneById(trimmed);
+            return trimmed;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

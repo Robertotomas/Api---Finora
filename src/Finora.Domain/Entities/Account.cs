@@ -12,6 +12,9 @@ public class Account : BaseEntity
     public bool IsArchived { get; set; } = false;
     public DateTime? ArchivedAt { get; set; }
 
+    /// <summary>Domínio da marca (ex.: "santander.pt") para o logo. Opcional; só camada visual.</summary>
+    public string? LogoDomain { get; set; }
+
     public Guid HouseholdId { get; set; }
     public Household Household { get; set; } = null!;
 

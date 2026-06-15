@@ -49,6 +49,10 @@ namespace Finora.Infrastructure.Migrations
                     b.Property<bool>("IsArchived")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("LogoDomain")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -65,6 +69,77 @@ namespace Finora.Infrastructure.Migrations
                     b.HasIndex("HouseholdId");
 
                     b.ToTable("Accounts");
+                });
+
+            modelBuilder.Entity("Finora.Domain.Entities.Asset", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("AcquisitionCost")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTime>("AcquisitionDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Category")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<Guid>("HouseholdId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HouseholdId");
+
+                    b.ToTable("Assets");
+                });
+
+            modelBuilder.Entity("Finora.Domain.Entities.AssetValuation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("Date")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId", "Date");
+
+                    b.ToTable("AssetValuations");
                 });
 
             modelBuilder.Entity("Finora.Domain.Entities.CoupleInvitation", b =>
@@ -124,6 +199,44 @@ namespace Finora.Infrastructure.Migrations
                     b.ToTable("CoupleInvitations");
                 });
 
+            modelBuilder.Entity("Finora.Domain.Entities.EmailConfirmationToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsRevoked")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("EmailConfirmationTokens");
+                });
+
             modelBuilder.Entity("Finora.Domain.Entities.Household", b =>
                 {
                     b.Property<Guid>("Id")
@@ -144,6 +257,10 @@ namespace Finora.Infrastructure.Migrations
                     b.Property<Guid?>("PrimaryAccountId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("StripeCustomerId")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
                     b.Property<int>("Type")
                         .HasColumnType("integer");
 
@@ -155,6 +272,43 @@ namespace Finora.Infrastructure.Migrations
                     b.HasIndex("PrimaryAccountId");
 
                     b.ToTable("Households");
+                });
+
+            modelBuilder.Entity("Finora.Domain.Entities.MonthlyBudget", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("ExpectedExpenses")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<decimal>("ExpectedIncome")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid>("HouseholdId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Month")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HouseholdId", "Year", "Month")
+                        .IsUnique();
+
+                    b.ToTable("MonthlyBudgets");
                 });
 
             modelBuilder.Entity("Finora.Domain.Entities.MonthlyReport", b =>
@@ -183,6 +337,11 @@ namespace Finora.Infrastructure.Migrations
                     b.Property<int>("Month")
                         .HasColumnType("integer");
 
+                    b.Property<int>("TemplateVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -195,6 +354,97 @@ namespace Finora.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("MonthlyReports");
+                });
+
+            modelBuilder.Entity("Finora.Domain.Entities.Notification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeduplicationKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("HouseholdId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsRead")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RedirectUrl")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeduplicationKey")
+                        .IsUnique()
+                        .HasFilter("\"DeduplicationKey\" IS NOT NULL");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("HouseholdId", "IsRead", "CreatedAt");
+
+                    b.ToTable("Notifications");
+                });
+
+            modelBuilder.Entity("Finora.Domain.Entities.PasswordResetToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsRevoked")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("PasswordResetTokens");
                 });
 
             modelBuilder.Entity("Finora.Domain.Entities.RecurringTransaction", b =>
@@ -232,10 +482,20 @@ namespace Finora.Infrastructure.Migrations
                     b.Property<int?>("EndYear")
                         .HasColumnType("integer");
 
+                    b.Property<string>("EntityName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("EntityType")
+                        .HasColumnType("integer");
+
                     b.Property<int>("Frequency")
                         .HasColumnType("integer");
 
                     b.Property<Guid>("HouseholdId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ResponsibleUserId")
                         .HasColumnType("uuid");
 
                     b.Property<int>("StartMonth")
@@ -257,6 +517,8 @@ namespace Finora.Infrastructure.Migrations
                     b.HasIndex("DestinationAccountId");
 
                     b.HasIndex("HouseholdId");
+
+                    b.HasIndex("ResponsibleUserId");
 
                     b.ToTable("RecurringTransactions");
                 });
@@ -307,6 +569,9 @@ namespace Finora.Infrastructure.Migrations
 
                     b.Property<Guid>("HouseholdId")
                         .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("LiquidatedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -359,6 +624,10 @@ namespace Finora.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
+                    b.Property<string>("StripeSubscriptionId")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -397,6 +666,13 @@ namespace Finora.Infrastructure.Migrations
 
                     b.Property<Guid?>("DestinationAccountId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("EntityName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("EntityType")
+                        .HasColumnType("integer");
 
                     b.Property<Guid>("HouseholdId")
                         .HasColumnType("uuid");
@@ -453,6 +729,9 @@ namespace Finora.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
+
+                    b.Property<bool>("EmailConfirmed")
+                        .HasColumnType("boolean");
 
                     b.Property<int>("FailedLoginAttempts")
                         .HasColumnType("integer");
@@ -512,6 +791,28 @@ namespace Finora.Infrastructure.Migrations
                     b.Navigation("Household");
                 });
 
+            modelBuilder.Entity("Finora.Domain.Entities.Asset", b =>
+                {
+                    b.HasOne("Finora.Domain.Entities.Household", "Household")
+                        .WithMany("Assets")
+                        .HasForeignKey("HouseholdId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Household");
+                });
+
+            modelBuilder.Entity("Finora.Domain.Entities.AssetValuation", b =>
+                {
+                    b.HasOne("Finora.Domain.Entities.Asset", "Asset")
+                        .WithMany("Valuations")
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
+                });
+
             modelBuilder.Entity("Finora.Domain.Entities.CoupleInvitation", b =>
                 {
                     b.HasOne("Finora.Domain.Entities.Household", "InviterHousehold")
@@ -531,6 +832,17 @@ namespace Finora.Infrastructure.Migrations
                     b.Navigation("InviterUser");
                 });
 
+            modelBuilder.Entity("Finora.Domain.Entities.EmailConfirmationToken", b =>
+                {
+                    b.HasOne("Finora.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Finora.Domain.Entities.Household", b =>
                 {
                     b.HasOne("Finora.Domain.Entities.Account", "PrimaryAccount")
@@ -539,6 +851,17 @@ namespace Finora.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("PrimaryAccount");
+                });
+
+            modelBuilder.Entity("Finora.Domain.Entities.MonthlyBudget", b =>
+                {
+                    b.HasOne("Finora.Domain.Entities.Household", "Household")
+                        .WithMany("MonthlyBudgets")
+                        .HasForeignKey("HouseholdId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Household");
                 });
 
             modelBuilder.Entity("Finora.Domain.Entities.MonthlyReport", b =>
@@ -550,6 +873,35 @@ namespace Finora.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Household");
+                });
+
+            modelBuilder.Entity("Finora.Domain.Entities.Notification", b =>
+                {
+                    b.HasOne("Finora.Domain.Entities.Household", "Household")
+                        .WithMany()
+                        .HasForeignKey("HouseholdId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Finora.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Household");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Finora.Domain.Entities.PasswordResetToken", b =>
+                {
+                    b.HasOne("Finora.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Finora.Domain.Entities.RecurringTransaction", b =>
@@ -571,11 +923,18 @@ namespace Finora.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Finora.Domain.Entities.User", "ResponsibleUser")
+                        .WithMany()
+                        .HasForeignKey("ResponsibleUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Account");
 
                     b.Navigation("DestinationAccount");
 
                     b.Navigation("Household");
+
+                    b.Navigation("ResponsibleUser");
                 });
 
             modelBuilder.Entity("Finora.Domain.Entities.RefreshToken", b =>
@@ -671,9 +1030,18 @@ namespace Finora.Infrastructure.Migrations
                     b.Navigation("Transactions");
                 });
 
+            modelBuilder.Entity("Finora.Domain.Entities.Asset", b =>
+                {
+                    b.Navigation("Valuations");
+                });
+
             modelBuilder.Entity("Finora.Domain.Entities.Household", b =>
                 {
                     b.Navigation("Accounts");
+
+                    b.Navigation("Assets");
+
+                    b.Navigation("MonthlyBudgets");
 
                     b.Navigation("MonthlyReports");
 

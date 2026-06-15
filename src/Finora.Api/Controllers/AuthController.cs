@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Finora.Api.Extensions;
 using Finora.Application.DTOs.Auth;
+using Finora.Application.Exceptions;
 using Finora.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -28,12 +29,25 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("auth")]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> Register([FromBody] RegisterRequest request, CancellationToken cancellationToken)
     {
         try
         {
-            var response = await _authService.RegisterAsync(request, cancellationToken);
-            return Ok(response);
+            var result = await _authService.RegisterAsync(request, cancellationToken);
+
+            // Fluxo normal: conta criada por confirmar — não inicia sessão.
+            if (result.RequiresEmailConfirmation)
+            {
+                return Ok(new
+                {
+                    requiresEmailConfirmation = true,
+                    email = result.Email,
+                    message = "Conta criada. Enviámos um email para confirmar o seu endereço."
+                });
+            }
+
+            // Convite de casal: email já confirmado → devolve a sessão.
+            return Ok(result.Auth);
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("already exists") || ex.Message.Contains("Convite"))
         {
@@ -56,10 +70,100 @@ public class AuthController : ControllerBase
             var response = await _authService.LoginAsync(request, cancellationToken);
             return Ok(response);
         }
+        catch (EmailNotConfirmedException ex)
+        {
+            // Credenciais válidas mas email por confirmar → 403 com código para a UI reagir.
+            return StatusCode(StatusCodes.Status403Forbidden, new
+            {
+                code = "EMAIL_NOT_CONFIRMED",
+                email = ex.Email,
+                message = ex.Message
+            });
+        }
         catch (UnauthorizedAccessException ex)
         {
             return Unauthorized(new { message = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Request a password-reset link by email. Always returns 200 (no email enumeration).
+    /// </summary>
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        await _authService.RequestPasswordResetAsync(request.Email, cancellationToken);
+        return Ok(new { message = "Se existir uma conta com esse email, enviámos um link para redefinir a palavra-passe." });
+    }
+
+    /// <summary>
+    /// Set a new password using a valid reset token from the email link.
+    /// </summary>
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        try
+        {
+            await _authService.ResetPasswordAsync(request.Token, request.NewPassword, cancellationToken);
+            return Ok(new { message = "Palavra-passe alterada com sucesso." });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Confirm the user's email from the token in the email link.
+    /// </summary>
+    [HttpPost("confirm-email")]
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ConfirmEmail([FromBody] ConfirmEmailRequest request, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        try
+        {
+            await _authService.ConfirmEmailAsync(request.Token, cancellationToken);
+            return Ok(new { message = "Email confirmado com sucesso. Já pode iniciar sessão." });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Resend the email-confirmation link. Always returns 200 (no email enumeration).
+    /// </summary>
+    [HttpPost("resend-email-confirmation")]
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> ResendEmailConfirmation([FromBody] ResendEmailConfirmationRequest request, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        await _authService.RequestEmailConfirmationAsync(request.Email, cancellationToken);
+        return Ok(new { message = "Se a conta existir e ainda não estiver confirmada, enviámos um novo email de confirmação." });
     }
 
     /// <summary>

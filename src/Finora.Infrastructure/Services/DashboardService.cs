@@ -84,96 +84,46 @@ public class DashboardService : IDashboardService
             }
             else
             {
+                // Single range query instead of month-by-month loop
                 accountBalancesAtPeriod = await _dashboardRepository.GetAccountBalancesAtEndOfMonthAsync(householdId, targetYear, lastMonthInYear, cancellationToken);
-                monthlyIncome = 0m;
-                monthlyExpenses = 0m;
-                for (var m = 1; m <= lastMonthInYear; m++)
-                {
-                    monthlyIncome += await _dashboardRepository.GetMonthlyIncomeAsync(householdId, targetYear, m, cancellationToken);
-                    monthlyExpenses += await _dashboardRepository.GetMonthlyExpensesAsync(householdId, targetYear, m, cancellationToken);
-                    var (ri, re) = await _recurringService.GetAmountsForMonthAsync(householdId, userId, targetYear, m, cancellationToken);
-                    monthlyIncome += ri;
-                    monthlyExpenses += re;
-                }
+                var (txIncome, txExpenses, txExpCat, txIncCat) = await _dashboardRepository.GetRangeAggregateAsync(householdId, targetYear, 1, lastMonthInYear, cancellationToken);
+                var recurringAgg = await _recurringService.GetAggregatedForMonthRangeAsync(
+                    householdId, userId, targetYear, 1, targetYear, lastMonthInYear, cancellationToken);
 
-                var expensesByCategoryDict = new Dictionary<int, decimal>();
-                var incomeByCategoryDict = new Dictionary<int, decimal>();
-                for (var m = 1; m <= lastMonthInYear; m++)
-                {
-                    var expensesByCategory = await _dashboardRepository.GetExpensesByCategoryAsync(householdId, targetYear, m, cancellationToken);
-                    foreach (var (cat, amt) in expensesByCategory)
-                        expensesByCategoryDict[cat] = expensesByCategoryDict.GetValueOrDefault(cat) + amt;
-                    var rc = await _recurringService.GetRecurringExpensesByCategoryAsync(householdId, userId, targetYear, m, cancellationToken);
-                    foreach (var (cat, amt) in rc)
-                        expensesByCategoryDict[cat] = expensesByCategoryDict.GetValueOrDefault(cat) + amt;
-
-                    var incomeByCategory = await _dashboardRepository.GetIncomeByCategoryAsync(householdId, targetYear, m, cancellationToken);
-                    foreach (var (cat, amt) in incomeByCategory)
-                        incomeByCategoryDict[cat] = incomeByCategoryDict.GetValueOrDefault(cat) + amt;
-                    var ric = await _recurringService.GetRecurringIncomeByCategoryAsync(householdId, userId, targetYear, m, cancellationToken);
-                    foreach (var (cat, amt) in ric)
-                        incomeByCategoryDict[cat] = incomeByCategoryDict.GetValueOrDefault(cat) + amt;
-                }
-
-                mergedCategories = expensesByCategoryDict.OrderByDescending(x => x.Value).Select(x => (x.Key, x.Value)).ToList();
-                mergedIncomeCategories = incomeByCategoryDict.OrderByDescending(x => x.Value).Select(x => (x.Key, x.Value)).ToList();
+                monthlyIncome = txIncome + recurringAgg.TotalIncome;
+                monthlyExpenses = txExpenses + recurringAgg.TotalExpenses;
+                mergedCategories = MergeExpensesByCategory(txExpCat, recurringAgg.ExpensesByCategory);
+                mergedIncomeCategories = MergeExpensesByCategory(txIncCat, recurringAgg.IncomeByCategory);
             }
         }
         else if (useFullYear)
         {
+            // Single range query instead of 12 loops
             accountBalancesAtPeriod = await _dashboardRepository.GetAccountBalancesAtEndOfYearAsync(householdId, targetYear, cancellationToken);
-            monthlyIncome = await _dashboardRepository.GetYearlyIncomeAsync(householdId, targetYear, cancellationToken);
-            monthlyExpenses = await _dashboardRepository.GetYearlyExpensesAsync(householdId, targetYear, cancellationToken);
+            var (txIncome, txExpenses, txExpCat, txIncCat) = await _dashboardRepository.GetRangeAggregateAsync(householdId, targetYear, 1, 12, cancellationToken);
+            var recurringAgg = await _recurringService.GetAggregatedForMonthRangeAsync(
+                householdId, userId, targetYear, 1, targetYear, 12, cancellationToken);
 
-            var recurringTotal = 0m;
-            var recurringExpTotal = 0m;
-            for (var m = 1; m <= 12; m++)
-            {
-                var (ri, re) = await _recurringService.GetAmountsForMonthAsync(householdId, userId, targetYear, m, cancellationToken);
-                recurringTotal += ri;
-                recurringExpTotal += re;
-            }
-            monthlyIncome += recurringTotal;
-            monthlyExpenses += recurringExpTotal;
-
-            var expensesByCategory = await _dashboardRepository.GetYearlyExpensesByCategoryAsync(householdId, targetYear, cancellationToken);
-            var recurringByCategoryDict = new Dictionary<int, decimal>();
-            for (var m = 1; m <= 12; m++)
-            {
-                var rc = await _recurringService.GetRecurringExpensesByCategoryAsync(householdId, userId, targetYear, m, cancellationToken);
-                foreach (var (cat, amt) in rc)
-                    recurringByCategoryDict[cat] = recurringByCategoryDict.GetValueOrDefault(cat) + amt;
-            }
-            var recurringByCategory = recurringByCategoryDict.Select(x => (x.Key, x.Value)).ToList();
-            mergedCategories = MergeExpensesByCategory(expensesByCategory, recurringByCategory);
-
-            var incomeByCategory = await _dashboardRepository.GetYearlyIncomeByCategoryAsync(householdId, targetYear, cancellationToken);
-            var recurringIncomeByCategoryDict = new Dictionary<int, decimal>();
-            for (var m = 1; m <= 12; m++)
-            {
-                var ric = await _recurringService.GetRecurringIncomeByCategoryAsync(householdId, userId, targetYear, m, cancellationToken);
-                foreach (var (cat, amt) in ric)
-                    recurringIncomeByCategoryDict[cat] = recurringIncomeByCategoryDict.GetValueOrDefault(cat) + amt;
-            }
-            var recurringIncomeByCategory = recurringIncomeByCategoryDict.Select(x => (x.Key, x.Value)).ToList();
-            mergedIncomeCategories = MergeExpensesByCategory(incomeByCategory, recurringIncomeByCategory);
+            monthlyIncome = txIncome + recurringAgg.TotalIncome;
+            monthlyExpenses = txExpenses + recurringAgg.TotalExpenses;
+            mergedCategories = MergeExpensesByCategory(txExpCat, recurringAgg.ExpensesByCategory);
+            mergedIncomeCategories = MergeExpensesByCategory(txIncCat, recurringAgg.IncomeByCategory);
         }
         else
         {
             var targetMonth = month!.Value;
+            // Combined queries: 2 queries instead of 6 (income+expenses in 1, categories in 1)
             accountBalancesAtPeriod = await _dashboardRepository.GetAccountBalancesAtEndOfMonthAsync(householdId, targetYear, targetMonth, cancellationToken);
-            monthlyIncome = await _dashboardRepository.GetMonthlyIncomeAsync(householdId, targetYear, targetMonth, cancellationToken);
-            monthlyExpenses = await _dashboardRepository.GetMonthlyExpensesAsync(householdId, targetYear, targetMonth, cancellationToken);
+            var (txIncome, txExpenses) = await _dashboardRepository.GetMonthlyIncomeAndExpensesAsync(householdId, targetYear, targetMonth, cancellationToken);
+            var (expensesByCategory, incomeByCategory) = await _dashboardRepository.GetAllCategoriesForMonthAsync(householdId, targetYear, targetMonth, cancellationToken);
 
             var (recurringIncome, recurringExpenses) = await _recurringService.GetAmountsForMonthAsync(householdId, userId, targetYear, targetMonth, cancellationToken);
-            monthlyIncome += recurringIncome;
-            monthlyExpenses += recurringExpenses;
+            monthlyIncome = txIncome + recurringIncome;
+            monthlyExpenses = txExpenses + recurringExpenses;
 
-            var expensesByCategory = await _dashboardRepository.GetExpensesByCategoryAsync(householdId, targetYear, targetMonth, cancellationToken);
             var recurringByCategory = await _recurringService.GetRecurringExpensesByCategoryAsync(householdId, userId, targetYear, targetMonth, cancellationToken);
             mergedCategories = MergeExpensesByCategory(expensesByCategory, recurringByCategory);
 
-            var incomeByCategory = await _dashboardRepository.GetIncomeByCategoryAsync(householdId, targetYear, targetMonth, cancellationToken);
             var recurringIncomeByCategory = await _recurringService.GetRecurringIncomeByCategoryAsync(householdId, userId, targetYear, targetMonth, cancellationToken);
             mergedIncomeCategories = MergeExpensesByCategory(incomeByCategory, recurringIncomeByCategory);
         }
@@ -351,24 +301,8 @@ public class DashboardService : IDashboardService
         }).ToList();
     }
 
-    private static string GetCategoryName(TransactionCategory category) => category switch
-    {
-        TransactionCategory.Salary => "Salário",
-        TransactionCategory.Freelance => "Freelance",
-        TransactionCategory.Investment => "Investimento",
-        TransactionCategory.Gift => "Presente",
-        TransactionCategory.Refund => "Reembolso",
-        TransactionCategory.Food => "Alimentação",
-        TransactionCategory.Transport => "Transportes",
-        TransactionCategory.Housing => "Habitação",
-        TransactionCategory.Utilities => "Utilidades",
-        TransactionCategory.Health => "Saúde",
-        TransactionCategory.Entertainment => "Entretenimento",
-        TransactionCategory.Shopping => "Compras",
-        TransactionCategory.Education => "Educação",
-        TransactionCategory.Transfer => "Transferência",
-        _ => "Outro"
-    };
+    private static string GetCategoryName(TransactionCategory category) =>
+        TransactionCategoryLabels.Labels.TryGetValue(category, out var name) ? name : "Outro";
 
     private async Task<IReadOnlyList<AccountBalanceAtDate>> MergeRecurringIntoAccountBalancesAsync(
         Guid householdId,
