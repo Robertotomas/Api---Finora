@@ -118,6 +118,12 @@ public class SubscriptionService : ISubscriptionService
         return plan != SubscriptionPlan.Free;
     }
 
+    public async Task<bool> CanAccessInvestmentsAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        var plan = await GetActivePlanAsync(householdId, cancellationToken);
+        return plan != SubscriptionPlan.Free;
+    }
+
     public async Task<DateTime?> GetPaidPlanStartDateAsync(Guid householdId, CancellationToken cancellationToken = default)
     {
         var active = await _subscriptionRepository.GetActiveByHouseholdIdAsync(householdId, cancellationToken);

@@ -28,6 +28,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<Asset> Assets => Set<Asset>();
     public DbSet<AssetValuation> AssetValuations => Set<AssetValuation>();
+    public DbSet<InvestmentHolding> InvestmentHoldings => Set<InvestmentHolding>();
+    public DbSet<InvestmentTransaction> InvestmentTransactions => Set<InvestmentTransaction>();
+    public DbSet<InstrumentQuote> InstrumentQuotes => Set<InstrumentQuote>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -296,6 +299,50 @@ public class ApplicationDbContext : DbContext
                 .WithMany(a => a.Valuations)
                 .HasForeignKey(e => e.AssetId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<InvestmentHolding>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Symbol).HasMaxLength(32);
+            entity.Property(e => e.Exchange).HasMaxLength(32);
+            entity.Property(e => e.ProviderSymbol).HasMaxLength(48);
+            entity.Property(e => e.Name).HasMaxLength(200);
+            entity.Property(e => e.LogoDomain).HasMaxLength(255);
+            entity.Property(e => e.Currency).HasMaxLength(8);
+            entity.Property(e => e.Type).HasConversion<int>();
+            entity.HasIndex(e => e.HouseholdId);
+
+            entity.HasOne(e => e.Household)
+                .WithMany(h => h.InvestmentHoldings)
+                .HasForeignKey(e => e.HouseholdId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<InvestmentTransaction>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Operation).HasConversion<int>();
+            entity.Property(e => e.Quantity).HasPrecision(18, 6);
+            entity.Property(e => e.UnitPrice).HasPrecision(18, 6);
+            entity.Property(e => e.Commission).HasPrecision(18, 6);
+            entity.Property(e => e.FxRateToEur).HasPrecision(18, 8);
+            entity.Property(e => e.FxFeePercent).HasPrecision(7, 4);
+            entity.HasIndex(e => e.InvestmentHoldingId);
+
+            entity.HasOne(e => e.InvestmentHolding)
+                .WithMany(h => h.Transactions)
+                .HasForeignKey(e => e.InvestmentHoldingId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<InstrumentQuote>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ProviderSymbol).HasMaxLength(48);
+            entity.Property(e => e.Currency).HasMaxLength(8);
+            entity.Property(e => e.Price).HasPrecision(18, 6);
+            entity.HasIndex(e => e.ProviderSymbol).IsUnique();
         });
 
         modelBuilder.Entity<CoupleInvitation>(entity =>

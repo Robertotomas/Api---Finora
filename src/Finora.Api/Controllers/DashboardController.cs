@@ -18,6 +18,7 @@ public class DashboardController : ControllerBase
     private readonly IRecurringTransactionRepository _recurringRepository;
     private readonly IAccountRepository _accountRepository;
     private readonly IAssetRepository _assetRepository;
+    private readonly IInvestmentService _investmentService;
 
     public DashboardController(
         IDashboardService dashboardService,
@@ -25,7 +26,8 @@ public class DashboardController : ControllerBase
         IDashboardRepository dashboardRepository,
         IRecurringTransactionRepository recurringRepository,
         IAccountRepository accountRepository,
-        IAssetRepository assetRepository)
+        IAssetRepository assetRepository,
+        IInvestmentService investmentService)
     {
         _dashboardService = dashboardService;
         _householdService = householdService;
@@ -33,6 +35,7 @@ public class DashboardController : ControllerBase
         _recurringRepository = recurringRepository;
         _accountRepository = accountRepository;
         _assetRepository = assetRepository;
+        _investmentService = investmentService;
     }
 
     private Guid? UserId
@@ -229,6 +232,15 @@ public class DashboardController : ControllerBase
                 return total;
             }
 
+            // 5c. Investimentos: valor atual total em EUR (sem histórico de preços → linha constante na janela,
+            //     mas mantém o nº do hero igual ao último ponto do gráfico).
+            var investmentsTotalEur = 0m;
+            if (UserId is { } uid)
+            {
+                var holdings = await _investmentService.GetByHouseholdAsync(householdId.Value, uid, cancellationToken);
+                investmentsTotalEur = holdings.Sum(h => h.CurrentValueEur ?? h.InvestedEur);
+            }
+
             // 6. Build cumulative transaction effects per account up to each day (forward approach)
             // Group all range transactions by (date, accountId), handling transfers
             var txByDateAccount = new Dictionary<(DateOnly, Guid), decimal>();
@@ -318,6 +330,8 @@ public class DashboardController : ControllerBase
 
                 // Add the value of all assets as of this day (Património Total inclui bens e valores).
                 balance += AssetsValueOn(d);
+                // Investimentos: valor atual total (constante na janela).
+                balance += investmentsTotalEur;
 
                 points.Add(new { date = d.ToString("yyyy-MM-dd"), balance = Math.Round(balance, 2) });
             }

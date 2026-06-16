@@ -6,7 +6,10 @@ COPY src/Finora.Api/Finora.Api.csproj src/Finora.Api/
 COPY src/Finora.Application/Finora.Application.csproj src/Finora.Application/
 COPY src/Finora.Domain/Finora.Domain.csproj src/Finora.Domain/
 COPY src/Finora.Infrastructure/Finora.Infrastructure.csproj src/Finora.Infrastructure/
-RUN dotnet restore
+# Restaurar só a API (puxa Application/Domain/Infrastructure por referência).
+# NÃO usar a solução: ela inclui o projeto de testes (tests/Finora.Domain.Tests),
+# que não é copiado para a imagem e faria o restore falhar (MSB3202).
+RUN dotnet restore src/Finora.Api/Finora.Api.csproj
 
 COPY . .
 RUN dotnet publish src/Finora.Api/Finora.Api.csproj -c Release -o /app/publish
