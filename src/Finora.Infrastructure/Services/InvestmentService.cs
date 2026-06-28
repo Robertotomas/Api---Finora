@@ -1,3 +1,4 @@
+using System.Globalization;
 using Finora.Application.DTOs.Investment;
 using Finora.Application.Interfaces;
 using Finora.Domain.Entities;
@@ -197,13 +198,24 @@ public class InvestmentService : IInvestmentService
         return n.Trim();
     }
 
+    // Cooldown server-side do refresh manual por agregado: o botão do cliente já trava 10 min, mas isto
+    // fecha o bypass (limpar localStorage / outro dispositivo) e evita martelar o Yahoo. Em memória.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, DateTime> _lastRefreshByHousehold = new();
+    private static readonly TimeSpan RefreshCooldown = TimeSpan.FromSeconds(60);
+
     public async Task<IReadOnlyList<InvestmentHoldingDto>> RefreshHouseholdQuotesAsync(Guid householdId, Guid userId, CancellationToken cancellationToken = default)
     {
         if (!await UserBelongsToHouseholdAsync(userId, householdId, cancellationToken))
             return Array.Empty<InvestmentHoldingDto>();
 
-        var holdings = await _investmentRepository.GetByHouseholdIdAsync(householdId, cancellationToken);
-        await _refreshService.RefreshSymbolsAsync(holdings.Select(h => h.ProviderSymbol), cancellationToken);
+        var now = DateTime.UtcNow;
+        if (!_lastRefreshByHousehold.TryGetValue(householdId, out var last) || now - last >= RefreshCooldown)
+        {
+            var holdings = await _investmentRepository.GetByHouseholdIdAsync(householdId, cancellationToken);
+            await _refreshService.RefreshSymbolsAsync(holdings.Select(h => h.ProviderSymbol), cancellationToken);
+            _lastRefreshByHousehold[householdId] = now;
+        }
+        // Dentro do cooldown devolve na mesma os DTOs atuais (cotações da BD) — sem chamada externa.
         return await GetByHouseholdAsync(householdId, userId, cancellationToken);
     }
 
@@ -253,23 +265,42 @@ public class InvestmentService : IInvestmentService
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var earliest = withTx.SelectMany(h => h.Transactions).Min(t => DateOnly.FromDateTime(t.Date));
+        // Período fixo (ex.: 5A) → mostra o intervalo completo, mesmo a 0 antes da 1ª compra (igual ao património).
+        // "Tudo" (from vazio) → começa na 1ª compra.
         var from = fromOpt ?? earliest;
         var to = toOpt ?? today;
-        if (from < earliest) from = earliest; // não desenhar antes da 1ª compra
         if (to > today) to = today;
         if (to < from) to = from;
 
         var rates = await _fxRateService.GetRatesToEurAsync(cancellationToken);
         var quotes = await GetQuoteMapAsync(withTx.Select(h => h.ProviderSymbol), cancellationToken);
 
+        // Buscar histórico (por SÍMBOLO) e séries de câmbio (por MOEDA) uma só vez cada, em paralelo —
+        // evita N+1 quando várias posições partilham símbolo/moeda (ex.: várias em USD).
+        var symbols = withTx.Select(h => h.ProviderSymbol)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var currencies = withTx.Select(h => h.Currency)
+            .Where(c => !string.IsNullOrWhiteSpace(c) && !string.Equals(c, "EUR", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        var priceTasks = symbols.ToDictionary(
+            s => s,
+            s => _marketDataProvider.GetHistoryAsync(s, from, to, cancellationToken),
+            StringComparer.OrdinalIgnoreCase);
+        var fxTasks = currencies.ToDictionary(
+            c => c,
+            c => _fxRateService.GetRateSeriesToEurAsync(c, from, to, cancellationToken),
+            StringComparer.OrdinalIgnoreCase);
+
+        await Task.WhenAll(priceTasks.Values.Cast<Task>().Concat(fxTasks.Values));
+
+        var emptyFx = new Dictionary<DateOnly, decimal>();
         var prepared = new List<HoldingSeries>();
         foreach (var h in withTx)
         {
-            var prices = await _marketDataProvider.GetHistoryAsync(h.ProviderSymbol, from, to, cancellationToken);
-            var isEur = string.Equals(h.Currency, "EUR", StringComparison.OrdinalIgnoreCase);
-            var fxMap = isEur
-                ? new Dictionary<DateOnly, decimal>()
-                : (IReadOnlyDictionary<DateOnly, decimal>)await _fxRateService.GetRateSeriesToEurAsync(h.Currency, from, to, cancellationToken);
+            var prices = priceTasks.TryGetValue(h.ProviderSymbol, out var pt) ? pt.Result : (IReadOnlyList<PricePoint>)Array.Empty<PricePoint>();
+            IReadOnlyDictionary<DateOnly, decimal> fxMap = fxTasks.TryGetValue(h.Currency, out var ft) ? ft.Result : emptyFx;
             prepared.Add(BuildHoldingSeries(h, prices, fxMap, rates, quotes.GetValueOrDefault(h.ProviderSymbol)));
         }
 
@@ -383,6 +414,173 @@ public class InvestmentService : IInvestmentService
             else break;
         }
         return last ?? fx[0].Rate;
+    }
+
+    public async Task<InvestmentImportResultDto> ImportTradesAsync(BrokerImportRequest request, Guid householdId, Guid userId, bool dryRun, CancellationToken cancellationToken = default)
+    {
+        var result = new InvestmentImportResultDto { DryRun = dryRun, HasUnparsedRows = request.HasUnparsedRows };
+        if (!await UserBelongsToHouseholdAsync(userId, householdId, cancellationToken))
+        {
+            result.Error = "Sem acesso a este agregado.";
+            return result;
+        }
+
+        var items = request.Items ?? new List<BrokerTradeDto>();
+        if (items.Count == 0)
+        {
+            result.Error = "Não foram encontradas transações para importar.";
+            return result;
+        }
+        result.Detected = items.Count;
+
+        // IDs já existentes neste agregado (para ignorar duplicados em reimportações).
+        var existingHoldings = await _investmentRepository.GetByHouseholdIdAsync(householdId, cancellationToken);
+        var seenExternalIds = new HashSet<string>(
+            existingHoldings.SelectMany(h => h.Transactions)
+                .Select(t => t.ExternalId)
+                .Where(id => !string.IsNullOrEmpty(id))!,
+            StringComparer.Ordinal);
+
+        var holdingCache = new Dictionary<string, InvestmentHolding>(StringComparer.OrdinalIgnoreCase);
+        var touchedSymbols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Ordena por data para criar compras antes das vendas.
+        var ordered = items
+            .Select(t => (Trade: t, Date: ParseDateOnly(t.Date)))
+            .OrderBy(x => x.Date)
+            .ToList();
+
+        foreach (var (trade, date) in ordered)
+        {
+            var externalId = trade.ExternalId?.Trim() ?? string.Empty;
+            var isDuplicate = string.IsNullOrEmpty(externalId) ? false : !seenExternalIds.Add(externalId);
+
+            result.Items.Add(new InvestmentImportItemDto
+            {
+                ProviderSymbol = trade.ProviderSymbol,
+                Name = string.IsNullOrWhiteSpace(trade.Name) ? trade.BaseSymbol : trade.Name,
+                Operation = trade.Operation == InvestmentOperation.Buy ? "Compra" : "Venda",
+                Date = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                Quantity = trade.Quantity,
+                UnitPrice = trade.UnitPrice,
+                Currency = trade.Currency,
+                Status = isDuplicate ? "duplicate" : "new",
+            });
+
+            if (isDuplicate) { result.Skipped++; continue; }
+            result.Created++;
+
+            if (dryRun) continue;
+
+            var holding = await GetOrCreateHoldingForImportAsync(holdingCache, householdId, trade, cancellationToken);
+            var isEur = string.Equals(trade.Currency, "EUR", StringComparison.OrdinalIgnoreCase);
+            var fx = isEur ? 1m
+                : (trade.FxRateToEur is > 0 ? trade.FxRateToEur.Value
+                    : await _fxRateService.GetRateToEurAsync(trade.Currency, date, cancellationToken));
+
+            await _investmentRepository.AddTransactionAsync(new InvestmentTransaction
+            {
+                Id = Guid.NewGuid(),
+                InvestmentHoldingId = holding.Id,
+                Operation = trade.Operation,
+                Date = date,
+                Quantity = trade.Quantity,
+                UnitPrice = trade.UnitPrice,
+                Commission = 0m,
+                FxRateToEur = fx,
+                FxFeePercent = 0m,
+                ExternalId = string.IsNullOrEmpty(externalId) ? null : externalId,
+                CreatedAt = DateTime.UtcNow,
+            }, cancellationToken);
+
+            // Usa o símbolo REAL da posição (já resolvido do ISIN), não o do extrato — senão o Yahoo não cota.
+            touchedSymbols.Add(holding.ProviderSymbol);
+        }
+
+        if (!dryRun && touchedSymbols.Count > 0)
+        {
+            try { await _refreshService.RefreshSymbolsAsync(touchedSymbols, cancellationToken); }
+            catch { /* o job diário recupera */ }
+        }
+
+        return result;
+    }
+
+    private static DateTime ParseDateOnly(string date)
+    {
+        if (DateTime.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var d))
+            return DateTime.SpecifyKind(d.Date, DateTimeKind.Utc);
+        return DateTime.UtcNow.Date;
+    }
+
+    private readonly Dictionary<string, InstrumentSearchResult?> _isinResolveCache = new(StringComparer.OrdinalIgnoreCase);
+
+    private static bool LooksLikeIsin(string s)
+        => s.Length == 12 && char.IsLetter(s[0]) && char.IsLetter(s[1]) && char.IsDigit(s[11]);
+
+    /// <summary>Resolve um ISIN → instrumento cotável (Twelve Data aceita ISIN). Best-effort, com cache por importação.</summary>
+    private async Task<InstrumentSearchResult?> ResolveIsinAsync(string isin, CancellationToken cancellationToken)
+    {
+        if (_isinResolveCache.TryGetValue(isin, out var cached)) return cached;
+        InstrumentSearchResult? result = null;
+        try
+        {
+            var results = await _marketDataProvider.SearchAsync(isin, cancellationToken);
+            result = results.Count > 0 ? results[0] : null;
+        }
+        catch { /* rate-limit / falha → fica como ISIN */ }
+        _isinResolveCache[isin] = result;
+        return result;
+    }
+
+    private async Task<InvestmentHolding> GetOrCreateHoldingForImportAsync(
+        Dictionary<string, InvestmentHolding> cache, Guid householdId, BrokerTradeDto trade, CancellationToken cancellationToken)
+    {
+        if (cache.TryGetValue(trade.ProviderSymbol, out var cached)) return cached;
+
+        // Sem ticker real (providerSymbol é um ISIN) → tenta resolver para um símbolo cotável + nome.
+        var providerSymbol = trade.ProviderSymbol;
+        var baseSymbol = trade.BaseSymbol;
+        var name = string.IsNullOrWhiteSpace(trade.Name) ? trade.BaseSymbol : trade.Name;
+        var exchange = trade.Exchange;
+        var type = trade.Type;
+        var isinForLookup = !string.IsNullOrWhiteSpace(trade.Isin) ? trade.Isin! : (LooksLikeIsin(providerSymbol) ? providerSymbol : null);
+
+        if (LooksLikeIsin(providerSymbol) && isinForLookup != null)
+        {
+            var r = await ResolveIsinAsync(isinForLookup, cancellationToken);
+            if (r != null && !string.IsNullOrWhiteSpace(r.ProviderSymbol))
+            {
+                providerSymbol = r.ProviderSymbol;
+                baseSymbol = string.IsNullOrWhiteSpace(r.Symbol) ? baseSymbol : r.Symbol;
+                name = string.IsNullOrWhiteSpace(r.Name) ? name : r.Name;
+                exchange = string.IsNullOrWhiteSpace(r.Exchange) ? exchange : r.Exchange;
+                type = r.Type;
+                // Moeda mantém-se a do extrato (o preço importado está nessa moeda); a conversão
+                // do valor de mercado usa a moeda da cotação do Yahoo, por isso os totais em € batem certo.
+            }
+        }
+
+        var holding = await _investmentRepository.GetByProviderSymbolAsync(householdId, providerSymbol, cancellationToken);
+        if (holding == null)
+        {
+            holding = new InvestmentHolding
+            {
+                Id = Guid.NewGuid(),
+                Symbol = baseSymbol,
+                Exchange = exchange,
+                ProviderSymbol = providerSymbol,
+                Name = name,
+                LogoDomain = null,
+                Currency = string.IsNullOrWhiteSpace(trade.Currency) ? "EUR" : trade.Currency.ToUpperInvariant(),
+                Type = type,
+                HouseholdId = householdId,
+                CreatedAt = DateTime.UtcNow,
+            };
+            await _investmentRepository.CreateAsync(holding, cancellationToken);
+        }
+        cache[trade.ProviderSymbol] = holding;
+        return holding;
     }
 
     private async Task<InvestmentHoldingDto> BuildDtoAsync(InvestmentHolding holding, CancellationToken cancellationToken)

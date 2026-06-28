@@ -26,4 +26,7 @@ public interface IInvestmentService
 
     /// <summary>Cotação histórica de um ticker (na moeda do instrumento), para o mini-gráfico de pré-visualização.</summary>
     Task<InstrumentPriceHistoryDto> GetInstrumentHistoryAsync(string providerSymbol, DateOnly from, DateOnly to, CancellationToken cancellationToken = default);
+
+    /// <summary>Importa transações já parseadas no cliente (Excel/CSV). dryRun = só pré-visualização. Duplicados (mesmo ExternalId) são ignorados.</summary>
+    Task<InvestmentImportResultDto> ImportTradesAsync(BrokerImportRequest request, Guid householdId, Guid userId, bool dryRun, CancellationToken cancellationToken = default);
 }

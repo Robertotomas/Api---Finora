@@ -110,17 +110,18 @@ public class AssetService : IAssetService
         if (!await UserBelongsToHouseholdAsync(userId, asset.HouseholdId, cancellationToken))
             return null;
 
-        await _assetRepository.AddValuationAsync(new AssetValuation
+        var valuation = new AssetValuation
         {
             Id = Guid.NewGuid(),
             AssetId = assetId,
             Date = ToUtc(request.Date),
             Value = request.Value,
             CreatedAt = DateTime.UtcNow
-        }, cancellationToken);
-
-        var refreshed = await _assetRepository.GetByIdAsync(assetId, cancellationToken);
-        return refreshed == null ? null : ToDto(refreshed);
+        };
+        // Reflete na coleção já carregada (tracked) → DTO atualizado sem 2.ª query.
+        asset.Valuations.Add(valuation);
+        await _assetRepository.AddValuationAsync(valuation, cancellationToken);
+        return ToDto(asset);
     }
 
     public async Task<AssetDto?> UpdateValuationAsync(Guid assetId, Guid valuationId, AddValuationRequest request, Guid userId, CancellationToken cancellationToken = default)
@@ -138,9 +139,8 @@ public class AssetService : IAssetService
         valuation.UpdatedAt = DateTime.UtcNow;
 
         await _assetRepository.UpdateValuationAsync(valuation, cancellationToken);
-
-        var refreshed = await _assetRepository.GetByIdAsync(assetId, cancellationToken);
-        return refreshed == null ? null : ToDto(refreshed);
+        // `valuation` já pertence a `asset.Valuations` (mesma instância tracked) → DTO atualizado sem 2.ª query.
+        return ToDto(asset);
     }
 
     public async Task<AssetDto?> DeleteValuationAsync(Guid assetId, Guid valuationId, Guid userId, CancellationToken cancellationToken = default)
@@ -157,10 +157,9 @@ public class AssetService : IAssetService
         if (asset.Valuations.Count <= 1)
             throw new InvalidOperationException("Não é possível eliminar a única avaliação do ativo.");
 
+        asset.Valuations.Remove(valuation);
         await _assetRepository.DeleteValuationAsync(valuation, cancellationToken);
-
-        var refreshed = await _assetRepository.GetByIdAsync(assetId, cancellationToken);
-        return refreshed == null ? null : ToDto(refreshed);
+        return ToDto(asset);
     }
 
     private async Task<bool> UserBelongsToHouseholdAsync(Guid userId, Guid householdId, CancellationToken cancellationToken)

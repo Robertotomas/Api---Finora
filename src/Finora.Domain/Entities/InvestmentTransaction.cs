@@ -27,4 +27,10 @@ public class InvestmentTransaction : BaseEntity
 
     /// <summary>Margem de câmbio do broker em % (ex.: 0,5% na XTB). 0 se for EUR.</summary>
     public decimal FxFeePercent { get; set; } = 0m;
+
+    /// <summary>
+    /// Chave de origem para importações (ex.: extrato XTB) — identifica a linha de forma estável
+    /// para evitar duplicados em reimportações. Null para transações criadas manualmente.
+    /// </summary>
+    public string? ExternalId { get; set; }
 }

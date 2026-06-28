@@ -238,7 +238,8 @@ public class DashboardController : ControllerBase
             if (UserId is { } uid)
             {
                 var holdings = await _investmentService.GetByHouseholdAsync(householdId.Value, uid, cancellationToken);
-                investmentsTotalEur = holdings.Sum(h => h.CurrentValueEur ?? h.InvestedEur);
+                // Só posições abertas (quantidade > 0); fechadas/negativas não contam para o património.
+                investmentsTotalEur = holdings.Where(h => h.Quantity > 0).Sum(h => h.CurrentValueEur ?? h.InvestedEur);
             }
 
             // 6. Build cumulative transaction effects per account up to each day (forward approach)

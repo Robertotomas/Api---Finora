@@ -134,6 +134,22 @@ public class InvestmentsController : ControllerBase
     private static DateOnly? ParseDate(string? value)
         => DateOnly.TryParseExact(value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d) ? d : null;
 
+    /// <summary>Importa transações já parseadas no cliente (Excel/CSV da corretora). dryRun=true → só pré-visualização.</summary>
+    [HttpPost("import")]
+    [ProducesResponseType(typeof(InvestmentImportResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<InvestmentImportResultDto>> Import([FromBody] BrokerImportRequest request, [FromQuery] bool dryRun, CancellationToken cancellationToken)
+    {
+        if (UserId == null) return NotFound();
+        var householdId = await ResolveHouseholdIdAsync(cancellationToken);
+        if (householdId == null) return NotFound();
+        if (!await _subscriptionService.CanAccessInvestmentsAsync(householdId.Value, cancellationToken))
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "INVESTMENTS_LOCKED", message = LockedMessage });
+
+        var result = await _investmentService.ImportTradesAsync(request ?? new BrokerImportRequest(), householdId.Value, UserId.Value, dryRun, cancellationToken);
+        return Ok(result);
+    }
+
     /// <summary>Adiciona uma transação (compra/venda); cria a posição se não existir.</summary>
     [HttpPost("transactions")]
     [ProducesResponseType(typeof(InvestmentHoldingDto), StatusCodes.Status200OK)]

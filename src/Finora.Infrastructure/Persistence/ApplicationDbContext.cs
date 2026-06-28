@@ -328,7 +328,9 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Commission).HasPrecision(18, 6);
             entity.Property(e => e.FxRateToEur).HasPrecision(18, 8);
             entity.Property(e => e.FxFeePercent).HasPrecision(7, 4);
+            entity.Property(e => e.ExternalId).HasMaxLength(80);
             entity.HasIndex(e => e.InvestmentHoldingId);
+            entity.HasIndex(e => e.ExternalId);
 
             entity.HasOne(e => e.InvestmentHolding)
                 .WithMany(h => h.Transactions)

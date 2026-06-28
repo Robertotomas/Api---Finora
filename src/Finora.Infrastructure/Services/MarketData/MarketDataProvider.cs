@@ -115,30 +115,46 @@ public class MarketDataProvider : IMarketDataProvider
     public async Task<IReadOnlyList<MarketQuote>> GetQuotesAsync(IEnumerable<string> providerSymbols, CancellationToken cancellationToken = default)
     {
         var symbols = providerSymbols.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToList();
-        var quotes = new List<MarketQuote>();
-        foreach (var sym in symbols)
+        if (symbols.Count == 0) return Array.Empty<MarketQuote>();
+
+        // Em paralelo, com concorrência limitada (evita N round-trips sequenciais ao Yahoo).
+        using var gate = new SemaphoreSlim(6);
+        var tasks = symbols.Select(async sym =>
         {
-            var q = await FetchYahooQuoteAsync(sym, cancellationToken);
-            if (q != null) quotes.Add(q);
-        }
-        return quotes;
+            await gate.WaitAsync(cancellationToken);
+            try { return await FetchYahooQuoteAsync(sym, cancellationToken); }
+            finally { gate.Release(); }
+        });
+        var results = await Task.WhenAll(tasks);
+        return results.Where(q => q != null).Select(q => q!).ToList();
     }
 
-    // Cache do histórico por chave "sym|from|to" com TTL curto (o intradiário não interessa).
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime CachedAt, IReadOnlyList<PricePoint> Points)> HistoryCache = new();
+    // Cache do histórico POR SÍMBOLO, cobrindo o intervalo máximo já pedido. Assim uma só chamada
+    // Yahoo serve todos os períodos (YTD/3M/.../5A): fatia-se em memória em vez de pedir por cada from/to.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime CachedAt, DateOnly From, DateOnly To, IReadOnlyList<PricePoint> Points)> HistoryCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan HistoryTtl = TimeSpan.FromHours(6);
 
     public async Task<IReadOnlyList<PricePoint>> GetHistoryAsync(string providerSymbol, DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(providerSymbol) || to < from) return Array.Empty<PricePoint>();
 
-        var key = $"{providerSymbol}|{from:yyyy-MM-dd}|{to:yyyy-MM-dd}";
-        if (HistoryCache.TryGetValue(key, out var hit) && DateTime.UtcNow - hit.CachedAt < HistoryTtl)
-            return hit.Points;
+        var hasEntry = HistoryCache.TryGetValue(providerSymbol, out var entry);
+        // Cache fresca que cobre o pedido → fatia em memória, sem ir ao Yahoo.
+        if (hasEntry && DateTime.UtcNow - entry.CachedAt < HistoryTtl && entry.From <= from && entry.To >= to)
+            return Slice(entry.Points, from, to);
+
+        // Alarga o fetch para cobrir o que já estava em cache (o intervalo cresce monotonicamente).
+        var fetchFrom = from;
+        var fetchTo = to;
+        if (hasEntry)
+        {
+            if (entry.From < fetchFrom) fetchFrom = entry.From;
+            if (entry.To > fetchTo) fetchTo = entry.To;
+        }
 
         // Yahoo aceita period1/period2 em segundos unix (period2 exclusivo → +1 dia).
-        var p1 = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero).ToUnixTimeSeconds();
-        var p2 = new DateTimeOffset(to.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero).ToUnixTimeSeconds();
+        var p1 = new DateTimeOffset(fetchFrom.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero).ToUnixTimeSeconds();
+        var p2 = new DateTimeOffset(fetchTo.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero).ToUnixTimeSeconds();
         var url = $"{_options.YahooBaseUrl}/v8/finance/chart/{Uri.EscapeDataString(providerSymbol)}?period1={p1}&period2={p2}&interval=1d";
 
         try
@@ -173,14 +189,26 @@ public class MarketDataProvider : IMarketDataProvider
             }
 
             IReadOnlyList<PricePoint> ordered = points.OrderBy(p => p.Date).ToList();
-            HistoryCache[key] = (DateTime.UtcNow, ordered);
-            return ordered;
+            HistoryCache[providerSymbol] = (DateTime.UtcNow, fetchFrom, fetchTo, ordered);
+            return Slice(ordered, from, to);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "History fetch failed for '{Symbol}'", providerSymbol);
+            // Falha de rede → reaproveita a cache anterior (mesmo expirada) se cobrir o pedido.
+            if (hasEntry && entry.From <= from && entry.To >= to) return Slice(entry.Points, from, to);
             return Array.Empty<PricePoint>();
         }
+    }
+
+    // Devolve só os pontos dentro de [from, to] (a lista já vem ordenada por data).
+    private static IReadOnlyList<PricePoint> Slice(IReadOnlyList<PricePoint> points, DateOnly from, DateOnly to)
+    {
+        if (points.Count == 0) return points;
+        var result = new List<PricePoint>(points.Count);
+        foreach (var p in points)
+            if (p.Date >= from && p.Date <= to) result.Add(p);
+        return result;
     }
 
     private async Task<MarketQuote?> FetchYahooQuoteAsync(string providerSymbol, CancellationToken cancellationToken)
