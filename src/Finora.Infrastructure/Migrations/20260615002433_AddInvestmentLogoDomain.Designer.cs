@@ -3,6 +3,7 @@ using System;
 using Finora.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Finora.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260615002433_AddInvestmentLogoDomain")]
+    partial class AddInvestmentLogoDomain
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -381,10 +384,6 @@ namespace Finora.Infrastructure.Migrations
                     b.Property<DateTime>("Date")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("ExternalId")
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
-
                     b.Property<decimal>("FxFeePercent")
                         .HasPrecision(7, 4)
                         .HasColumnType("numeric(7,4)");
@@ -411,8 +410,6 @@ namespace Finora.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("ExternalId");
 
                     b.HasIndex("InvestmentHoldingId");
 

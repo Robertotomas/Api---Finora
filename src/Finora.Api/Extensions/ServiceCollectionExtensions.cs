@@ -21,10 +21,23 @@ public static class ServiceCollectionExtensions
         services.Configure<AppOptions>(configuration.GetSection(AppOptions.SectionName));
         services.Configure<PostmarkOptions>(configuration.GetSection(PostmarkOptions.SectionName));
         services.Configure<StripeOptions>(configuration.GetSection(StripeOptions.SectionName));
+        services.Configure<MarketDataOptions>(configuration.GetSection(MarketDataOptions.SectionName));
+        services.Configure<LogoDevOptions>(configuration.GetSection(LogoDevOptions.SectionName));
 
         services.AddHttpClient<IEmailService, PostmarkEmailService>(client =>
         {
             client.BaseAddress = new Uri("https://api.postmarkapp.com/");
+        });
+
+        // Market data (Twelve Data + Yahoo) e câmbio (frankfurter). Yahoo exige User-Agent de browser.
+        services.AddHttpClient<IMarketDataProvider, Finora.Infrastructure.Services.MarketData.MarketDataProvider>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(20);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) FinoraFlow/1.0");
+        });
+        services.AddHttpClient<IFxRateService, FxRateService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(15);
         });
 
         services.AddScoped<IAuthService, AuthService>();
@@ -39,6 +52,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRecurringAccountBalanceService, RecurringAccountBalanceService>();
         services.AddScoped<ISearchService, SearchService>();
         services.AddScoped<IAssetService, AssetService>();
+        services.AddScoped<IInvestmentService, InvestmentService>();
+        services.AddScoped<IMarketDataRefreshService, MarketDataRefreshService>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
         services.AddScoped<ISavingsObjectiveRepository, SavingsObjectiveRepository>();
@@ -47,6 +62,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();
         services.AddScoped<IAccountRepository, AccountRepository>();
         services.AddScoped<IAssetRepository, AssetRepository>();
+        services.AddScoped<IInvestmentRepository, InvestmentRepository>();
+        services.AddScoped<IInstrumentQuoteRepository, InstrumentQuoteRepository>();
         services.AddScoped<ITransactionRepository, TransactionRepository>();
         services.AddScoped<IMonthlyReportRepository, MonthlyReportRepository>();
         services.AddScoped<IMonthlyReportGenerationService, MonthlyReportGenerationService>();

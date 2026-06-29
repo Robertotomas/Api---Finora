@@ -3,6 +3,7 @@ using System;
 using Finora.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Finora.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260614223151_AddInvestments")]
+    partial class AddInvestments
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -317,6 +320,10 @@ namespace Finora.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<decimal>("AverageCost")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -333,10 +340,6 @@ namespace Finora.Infrastructure.Migrations
                     b.Property<Guid>("HouseholdId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("LogoDomain")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -346,6 +349,10 @@ namespace Finora.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(48)
                         .HasColumnType("character varying(48)");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)");
 
                     b.Property<string>("Symbol")
                         .IsRequired()
@@ -363,60 +370,6 @@ namespace Finora.Infrastructure.Migrations
                     b.HasIndex("HouseholdId");
 
                     b.ToTable("InvestmentHoldings");
-                });
-
-            modelBuilder.Entity("Finora.Domain.Entities.InvestmentTransaction", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("Commission")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("Date")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ExternalId")
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
-
-                    b.Property<decimal>("FxFeePercent")
-                        .HasPrecision(7, 4)
-                        .HasColumnType("numeric(7,4)");
-
-                    b.Property<decimal>("FxRateToEur")
-                        .HasPrecision(18, 8)
-                        .HasColumnType("numeric(18,8)");
-
-                    b.Property<Guid>("InvestmentHoldingId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Operation")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("Quantity")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)");
-
-                    b.Property<decimal>("UnitPrice")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ExternalId");
-
-                    b.HasIndex("InvestmentHoldingId");
-
-                    b.ToTable("InvestmentTransactions");
                 });
 
             modelBuilder.Entity("Finora.Domain.Entities.MonthlyBudget", b =>
@@ -1009,17 +962,6 @@ namespace Finora.Infrastructure.Migrations
                     b.Navigation("Household");
                 });
 
-            modelBuilder.Entity("Finora.Domain.Entities.InvestmentTransaction", b =>
-                {
-                    b.HasOne("Finora.Domain.Entities.InvestmentHolding", "InvestmentHolding")
-                        .WithMany("Transactions")
-                        .HasForeignKey("InvestmentHoldingId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("InvestmentHolding");
-                });
-
             modelBuilder.Entity("Finora.Domain.Entities.MonthlyBudget", b =>
                 {
                     b.HasOne("Finora.Domain.Entities.Household", "Household")
@@ -1221,11 +1163,6 @@ namespace Finora.Infrastructure.Migrations
                     b.Navigation("Transactions");
 
                     b.Navigation("Users");
-                });
-
-            modelBuilder.Entity("Finora.Domain.Entities.InvestmentHolding", b =>
-                {
-                    b.Navigation("Transactions");
                 });
 
             modelBuilder.Entity("Finora.Domain.Entities.Transaction", b =>

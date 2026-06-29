@@ -55,6 +55,7 @@ builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddSwaggerWithJwt();
 builder.Services.AddHostedService<Finora.Api.Services.MonthlyReportGeneratorHostedService>();
 builder.Services.AddHostedService<Finora.Api.Services.NotificationGeneratorHostedService>();
+builder.Services.AddHostedService<Finora.Api.Services.MarketDataRefreshHostedService>();
 
 // Rate limiting
 builder.Services.AddRateLimiter(options =>

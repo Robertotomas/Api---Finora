@@ -3,6 +3,7 @@ using System;
 using Finora.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Finora.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260614230120_AddInvestmentTransactions")]
+    partial class AddInvestmentTransactions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -333,10 +336,6 @@ namespace Finora.Infrastructure.Migrations
                     b.Property<Guid>("HouseholdId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("LogoDomain")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -381,18 +380,6 @@ namespace Finora.Infrastructure.Migrations
                     b.Property<DateTime>("Date")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("ExternalId")
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
-
-                    b.Property<decimal>("FxFeePercent")
-                        .HasPrecision(7, 4)
-                        .HasColumnType("numeric(7,4)");
-
-                    b.Property<decimal>("FxRateToEur")
-                        .HasPrecision(18, 8)
-                        .HasColumnType("numeric(18,8)");
-
                     b.Property<Guid>("InvestmentHoldingId")
                         .HasColumnType("uuid");
 
@@ -411,8 +398,6 @@ namespace Finora.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("ExternalId");
 
                     b.HasIndex("InvestmentHoldingId");
 
