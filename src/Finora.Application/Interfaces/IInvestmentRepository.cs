@@ -23,4 +23,14 @@ public interface IInvestmentRepository
 
     /// <summary>Todos os ProviderSymbol distintos em uso (para o job diário de preços).</summary>
     Task<IReadOnlyList<string>> GetDistinctProviderSymbolsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Movimentos de tesouraria (depósitos/levantamentos) do agregado.</summary>
+    Task<IReadOnlyList<InvestmentDeposit>> GetDepositsByHouseholdIdAsync(Guid householdId, CancellationToken cancellationToken = default);
+
+    /// <summary>Grava vários depósitos de uma vez (import).</summary>
+    Task AddDepositsAsync(IEnumerable<InvestmentDeposit> deposits, CancellationToken cancellationToken = default);
+
+    Task<InvestmentDeposit?> GetDepositByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task UpdateDepositAsync(InvestmentDeposit deposit, CancellationToken cancellationToken = default);
+    Task DeleteDepositAsync(InvestmentDeposit deposit, CancellationToken cancellationToken = default);
 }

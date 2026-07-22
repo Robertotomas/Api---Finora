@@ -29,4 +29,16 @@ public interface IInvestmentService
 
     /// <summary>Importa transações já parseadas no cliente (Excel/CSV). dryRun = só pré-visualização. Duplicados (mesmo ExternalId) são ignorados.</summary>
     Task<InvestmentImportResultDto> ImportTradesAsync(BrokerImportRequest request, Guid householdId, Guid userId, bool dryRun, CancellationToken cancellationToken = default);
+
+    /// <summary>Total líquido depositado na corretora (em EUR), para a métrica "Depósitos".</summary>
+    Task<InvestmentDepositsDto> GetDepositsSummaryAsync(Guid householdId, Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Adiciona um depósito à mão; se <c>AccountId</c> vier, debita essa conta. Devolve o total atualizado.</summary>
+    Task<InvestmentDepositsDto> AddManualDepositAsync(AddDepositRequest request, Guid householdId, Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Edita um depósito; reconcilia o saldo da conta (reverte o antigo, aplica o novo).</summary>
+    Task<InvestmentDepositsDto> UpdateDepositAsync(Guid depositId, UpdateDepositRequest request, Guid householdId, Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Elimina um depósito; se tinha debitado uma conta, devolve o montante ao saldo.</summary>
+    Task<InvestmentDepositsDto> DeleteDepositAsync(Guid depositId, Guid householdId, Guid userId, CancellationToken cancellationToken = default);
 }

@@ -85,4 +85,38 @@ public class InvestmentRepository : IInvestmentRepository
             .Distinct()
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<InvestmentDeposit>> GetDepositsByHouseholdIdAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        return await _context.InvestmentDeposits
+            .AsNoTracking()
+            .Where(d => d.HouseholdId == householdId)
+            .OrderBy(d => d.Date)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task AddDepositsAsync(IEnumerable<InvestmentDeposit> deposits, CancellationToken cancellationToken = default)
+    {
+        var list = deposits.ToList();
+        if (list.Count == 0) return;
+        _context.InvestmentDeposits.AddRange(list);
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<InvestmentDeposit?> GetDepositByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        return await _context.InvestmentDeposits.FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
+    }
+
+    public async Task UpdateDepositAsync(InvestmentDeposit deposit, CancellationToken cancellationToken = default)
+    {
+        _context.InvestmentDeposits.Update(deposit);
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteDepositAsync(InvestmentDeposit deposit, CancellationToken cancellationToken = default)
+    {
+        _context.InvestmentDeposits.Remove(deposit);
+        await _context.SaveChangesAsync(cancellationToken);
+    }
 }

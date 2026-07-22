@@ -24,10 +24,24 @@ public class BrokerTradeDto
     public string ExternalId { get; set; } = string.Empty;
 }
 
+/// <summary>Movimento de tesouraria parseado no cliente (depósito/levantamento).</summary>
+public class BrokerDepositDto
+{
+    /// <summary>Data (yyyy-MM-dd).</summary>
+    public string Date { get; set; } = string.Empty;
+    /// <summary>Montante; positivo = depósito, negativo = levantamento.</summary>
+    public decimal Amount { get; set; }
+    public string Currency { get; set; } = "EUR";
+    /// <summary>Chave estável (ex.: "xtb:{id}") para deduplicação.</summary>
+    public string ExternalId { get; set; } = string.Empty;
+}
+
 /// <summary>Pedido de importação (transações já parseadas no cliente).</summary>
 public class BrokerImportRequest
 {
     public List<BrokerTradeDto> Items { get; set; } = new();
+    /// <summary>Depósitos/levantamentos do extrato (para a métrica "Depósitos").</summary>
+    public List<BrokerDepositDto> Deposits { get; set; } = new();
     /// <summary>true se o parser do cliente detetou linhas que não conseguiu interpretar.</summary>
     public bool HasUnparsedRows { get; set; }
 }
@@ -52,6 +66,9 @@ public class InvestmentImportResultDto
 
     /// <summary>Mensagem de erro amigável quando a leitura falha (ex.: PDF não é da XTB).</summary>
     public string? Error { get; set; }
+
+    /// <summary>Depósitos/levantamentos novos gravados (ou que o seriam em dry-run).</summary>
+    public int DepositsImported { get; set; }
 
     public List<InvestmentImportItemDto> Items { get; set; } = new();
 }

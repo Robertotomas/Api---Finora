@@ -15,6 +15,7 @@ public class InvestmentService : IInvestmentService
     private readonly IFxRateService _fxRateService;
     private readonly IMarketDataProvider _marketDataProvider;
     private readonly IMarketDataRefreshService _refreshService;
+    private readonly IAccountRepository _accountRepository;
 
     public InvestmentService(
         IInvestmentRepository investmentRepository,
@@ -22,7 +23,8 @@ public class InvestmentService : IInvestmentService
         IUserRepository userRepository,
         IFxRateService fxRateService,
         IMarketDataProvider marketDataProvider,
-        IMarketDataRefreshService refreshService)
+        IMarketDataRefreshService refreshService,
+        IAccountRepository accountRepository)
     {
         _investmentRepository = investmentRepository;
         _quoteRepository = quoteRepository;
@@ -30,6 +32,7 @@ public class InvestmentService : IInvestmentService
         _fxRateService = fxRateService;
         _marketDataProvider = marketDataProvider;
         _refreshService = refreshService;
+        _accountRepository = accountRepository;
     }
 
     public async Task<IReadOnlyList<InvestmentHoldingDto>> GetByHouseholdAsync(Guid householdId, Guid userId, CancellationToken cancellationToken = default)
@@ -513,7 +516,159 @@ public class InvestmentService : IInvestmentService
             catch { /* o job diário recupera */ }
         }
 
+        // Depósitos/levantamentos do extrato (dedup por ExternalId, tal como as transações).
+        var deposits = request.Deposits ?? new List<BrokerDepositDto>();
+        if (deposits.Count > 0)
+        {
+            var existingDepositIds = new HashSet<string>(
+                (await _investmentRepository.GetDepositsByHouseholdIdAsync(householdId, cancellationToken))
+                    .Select(d => d.ExternalId).Where(id => !string.IsNullOrEmpty(id))!,
+                StringComparer.Ordinal);
+
+            var toAdd = new List<InvestmentDeposit>();
+            foreach (var dep in deposits)
+            {
+                var extId = dep.ExternalId?.Trim() ?? string.Empty;
+                if (!string.IsNullOrEmpty(extId) && !existingDepositIds.Add(extId)) continue; // duplicado
+                result.DepositsImported++;
+                if (dryRun) continue;
+                toAdd.Add(new InvestmentDeposit
+                {
+                    Id = Guid.NewGuid(),
+                    HouseholdId = householdId,
+                    Date = ParseDateOnly(dep.Date),
+                    Amount = dep.Amount,
+                    Currency = string.IsNullOrWhiteSpace(dep.Currency) ? "EUR" : dep.Currency.ToUpperInvariant(),
+                    ExternalId = string.IsNullOrEmpty(extId) ? null : extId,
+                    CreatedAt = DateTime.UtcNow,
+                });
+            }
+            if (!dryRun && toAdd.Count > 0)
+                await _investmentRepository.AddDepositsAsync(toAdd, cancellationToken);
+        }
+
         return result;
+    }
+
+    public async Task<InvestmentDepositsDto> GetDepositsSummaryAsync(Guid householdId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        var dto = new InvestmentDepositsDto();
+        if (!await UserBelongsToHouseholdAsync(userId, householdId, cancellationToken)) return dto;
+
+        var deposits = await _investmentRepository.GetDepositsByHouseholdIdAsync(householdId, cancellationToken);
+        if (deposits.Count == 0) return dto;
+
+        decimal total = 0m;
+        foreach (var d in deposits)
+        {
+            // Quase sempre EUR (contas XTB em EUR). Outra moeda → converte pela taxa da data.
+            if (string.Equals(d.Currency, "EUR", StringComparison.OrdinalIgnoreCase))
+                total += d.Amount;
+            else
+                total += d.Amount * await _fxRateService.GetRateToEurAsync(d.Currency, d.Date, cancellationToken);
+        }
+        dto.TotalEur = total;
+        dto.Count = deposits.Count;
+        dto.Items = deposits
+            .OrderByDescending(d => d.Date).ThenByDescending(d => d.CreatedAt)
+            .Select(d => new InvestmentDepositItemDto
+            {
+                Id = d.Id,
+                Date = d.Date,
+                Amount = d.Amount,
+                Currency = d.Currency,
+                Source = string.IsNullOrEmpty(d.ExternalId) ? "manual" : "import",
+                AccountId = d.AccountId,
+            }).ToList();
+        return dto;
+    }
+
+    // Ajusta o saldo de uma conta do agregado (delta negativo = debita). Ignora se a conta não existe.
+    private async Task ApplyAccountBalanceDeltaAsync(Guid? accountId, Guid householdId, decimal delta, CancellationToken cancellationToken)
+    {
+        if (accountId is not { } id || delta == 0m) return;
+        var account = await _accountRepository.GetByIdAsync(id, cancellationToken);
+        if (account == null || account.HouseholdId != householdId) return;
+        account.Balance += delta;
+        account.UpdatedAt = DateTime.UtcNow;
+        await _accountRepository.UpdateAsync(account, cancellationToken);
+    }
+
+    public async Task<InvestmentDepositsDto> UpdateDepositAsync(Guid depositId, UpdateDepositRequest request, Guid householdId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        if (!await UserBelongsToHouseholdAsync(userId, householdId, cancellationToken))
+            return new InvestmentDepositsDto();
+        var deposit = await _investmentRepository.GetDepositByIdAsync(depositId, cancellationToken);
+        if (deposit == null || deposit.HouseholdId != householdId)
+            return await GetDepositsSummaryAsync(householdId, userId, cancellationToken);
+
+        // Reconcilia saldos: devolve o débito antigo, aplica o novo (lida com mudança de conta e de montante).
+        await ApplyAccountBalanceDeltaAsync(deposit.AccountId, householdId, +deposit.Amount, cancellationToken);
+        await ApplyAccountBalanceDeltaAsync(request.AccountId, householdId, -request.Amount, cancellationToken);
+
+        var date = request.Date.Kind == DateTimeKind.Utc ? request.Date : DateTime.SpecifyKind(request.Date, DateTimeKind.Utc);
+        deposit.Date = date.Date;
+        deposit.Amount = request.Amount;
+        deposit.AccountId = request.AccountId;
+        deposit.UpdatedAt = DateTime.UtcNow;
+        await _investmentRepository.UpdateDepositAsync(deposit, cancellationToken);
+
+        return await GetDepositsSummaryAsync(householdId, userId, cancellationToken);
+    }
+
+    public async Task<InvestmentDepositsDto> DeleteDepositAsync(Guid depositId, Guid householdId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        if (!await UserBelongsToHouseholdAsync(userId, householdId, cancellationToken))
+            return new InvestmentDepositsDto();
+        var deposit = await _investmentRepository.GetDepositByIdAsync(depositId, cancellationToken);
+        if (deposit == null || deposit.HouseholdId != householdId)
+            return await GetDepositsSummaryAsync(householdId, userId, cancellationToken);
+
+        // Devolve ao saldo o que tinha sido debitado.
+        await ApplyAccountBalanceDeltaAsync(deposit.AccountId, householdId, +deposit.Amount, cancellationToken);
+        await _investmentRepository.DeleteDepositAsync(deposit, cancellationToken);
+
+        return await GetDepositsSummaryAsync(householdId, userId, cancellationToken);
+    }
+
+    public async Task<InvestmentDepositsDto> AddManualDepositAsync(AddDepositRequest request, Guid householdId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        if (!await UserBelongsToHouseholdAsync(userId, householdId, cancellationToken))
+            return new InvestmentDepositsDto();
+
+        var date = request.Date.Kind == DateTimeKind.Utc ? request.Date : DateTime.SpecifyKind(request.Date, DateTimeKind.Utc);
+
+        // Débito opcional numa conta do agregado (o dinheiro que saiu para a corretora). Só regista a
+        // conta se ela existir no agregado (para poder reconciliar depois em edições/eliminações).
+        Guid? debitedAccountId = null;
+        if (request.AccountId is { } accountId)
+        {
+            var account = await _accountRepository.GetByIdAsync(accountId, cancellationToken);
+            if (account != null && account.HouseholdId == householdId)
+            {
+                account.Balance -= request.Amount;
+                account.UpdatedAt = DateTime.UtcNow;
+                await _accountRepository.UpdateAsync(account, cancellationToken);
+                debitedAccountId = accountId;
+            }
+        }
+
+        await _investmentRepository.AddDepositsAsync(new[]
+        {
+            new InvestmentDeposit
+            {
+                Id = Guid.NewGuid(),
+                HouseholdId = householdId,
+                Date = date.Date,
+                Amount = request.Amount, // manual = sempre depósito (positivo)
+                Currency = "EUR",
+                ExternalId = null, // manual → sem dedup por ID
+                AccountId = debitedAccountId,
+                CreatedAt = DateTime.UtcNow,
+            }
+        }, cancellationToken);
+
+        return await GetDepositsSummaryAsync(householdId, userId, cancellationToken);
     }
 
     private static DateTime ParseDateOnly(string date)

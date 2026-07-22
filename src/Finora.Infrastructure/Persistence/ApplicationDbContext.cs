@@ -30,6 +30,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<AssetValuation> AssetValuations => Set<AssetValuation>();
     public DbSet<InvestmentHolding> InvestmentHoldings => Set<InvestmentHolding>();
     public DbSet<InvestmentTransaction> InvestmentTransactions => Set<InvestmentTransaction>();
+    public DbSet<InvestmentDeposit> InvestmentDeposits => Set<InvestmentDeposit>();
     public DbSet<InstrumentQuote> InstrumentQuotes => Set<InstrumentQuote>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -335,6 +336,21 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(e => e.InvestmentHolding)
                 .WithMany(h => h.Transactions)
                 .HasForeignKey(e => e.InvestmentHoldingId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<InvestmentDeposit>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Amount).HasPrecision(18, 2);
+            entity.Property(e => e.Currency).HasMaxLength(8);
+            entity.Property(e => e.ExternalId).HasMaxLength(80);
+            entity.HasIndex(e => e.HouseholdId);
+            entity.HasIndex(e => e.ExternalId);
+
+            entity.HasOne(e => e.Household)
+                .WithMany()
+                .HasForeignKey(e => e.HouseholdId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
