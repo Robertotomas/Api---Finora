@@ -211,6 +211,61 @@ public class MarketDataProvider : IMarketDataProvider
         return result;
     }
 
+    // Cache de splits por símbolo (raramente mudam; TTL 6h, partilhada entre agregados).
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime CachedAt, IReadOnlyList<StockSplit> Splits)> SplitsCache = new(StringComparer.OrdinalIgnoreCase);
+
+    public async Task<IReadOnlyList<StockSplit>> GetSplitsAsync(string providerSymbol, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(providerSymbol)) return Array.Empty<StockSplit>();
+        if (SplitsCache.TryGetValue(providerSymbol, out var hit) && DateTime.UtcNow - hit.CachedAt < HistoryTtl)
+            return hit.Splits;
+
+        // Pede o histórico completo (desde 1970) só pelos eventos de split; interval=1mo minimiza o payload de preços.
+        var p2 = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(1), TimeSpan.Zero).ToUnixTimeSeconds();
+        var url = $"{_options.YahooBaseUrl}/v8/finance/chart/{Uri.EscapeDataString(providerSymbol)}?period1=0&period2={p2}&interval=1mo&events=splits";
+
+        try
+        {
+            using var resp = await _http.GetAsync(url, cancellationToken);
+            if (!resp.IsSuccessStatusCode) return CacheSplits(providerSymbol, Array.Empty<StockSplit>());
+            await using var stream = await resp.Content.ReadAsStreamAsync(cancellationToken);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+
+            if (!doc.RootElement.TryGetProperty("chart", out var chart)) return CacheSplits(providerSymbol, Array.Empty<StockSplit>());
+            if (!chart.TryGetProperty("result", out var result) || result.ValueKind != JsonValueKind.Array) return CacheSplits(providerSymbol, Array.Empty<StockSplit>());
+            var first = result.EnumerateArray().FirstOrDefault();
+            if (first.ValueKind != JsonValueKind.Object) return CacheSplits(providerSymbol, Array.Empty<StockSplit>());
+            if (!first.TryGetProperty("events", out var events) || !events.TryGetProperty("splits", out var splits) || splits.ValueKind != JsonValueKind.Object)
+                return CacheSplits(providerSymbol, Array.Empty<StockSplit>());
+
+            var list = new List<StockSplit>();
+            foreach (var ev in splits.EnumerateObject())
+            {
+                var e = ev.Value;
+                if (e.ValueKind != JsonValueKind.Object) continue;
+                if (!e.TryGetProperty("date", out var dEl) || dEl.ValueKind != JsonValueKind.Number) continue;
+                if (!e.TryGetProperty("numerator", out var numEl) || !TryDecimal(numEl, out var num) || num <= 0) continue;
+                if (!e.TryGetProperty("denominator", out var denEl) || !TryDecimal(denEl, out var den) || den <= 0) continue;
+                var date = DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeSeconds(dEl.GetInt64()).UtcDateTime);
+                list.Add(new StockSplit(date, num / den));
+            }
+            IReadOnlyList<StockSplit> ordered = list.OrderBy(s => s.Date).ToList();
+            return CacheSplits(providerSymbol, ordered);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Splits fetch failed for '{Symbol}'", providerSymbol);
+            if (SplitsCache.TryGetValue(providerSymbol, out var stale)) return stale.Splits; // reaproveita mesmo expirado
+            return Array.Empty<StockSplit>();
+        }
+    }
+
+    private static IReadOnlyList<StockSplit> CacheSplits(string symbol, IReadOnlyList<StockSplit> splits)
+    {
+        SplitsCache[symbol] = (DateTime.UtcNow, splits);
+        return splits;
+    }
+
     private async Task<MarketQuote?> FetchYahooQuoteAsync(string providerSymbol, CancellationToken cancellationToken)
     {
         var url = $"{_options.YahooBaseUrl}/v8/finance/chart/{Uri.EscapeDataString(providerSymbol)}?range=1d&interval=1d";

@@ -42,7 +42,8 @@ public class InvestmentService : IInvestmentService
 
         var quotes = await GetQuoteMapAsync(holdings.Select(h => h.ProviderSymbol), cancellationToken);
         var rates = await _fxRateService.GetRatesToEurAsync(cancellationToken);
-        return holdings.Select(h => ToDto(h, quotes.GetValueOrDefault(h.ProviderSymbol), rates)).ToList();
+        var splits = await GetSplitsMapAsync(holdings.Select(h => h.ProviderSymbol), cancellationToken);
+        return holdings.Select(h => ToDto(h, quotes.GetValueOrDefault(h.ProviderSymbol), rates, splits.GetValueOrDefault(h.ProviderSymbol) ?? NoSplits)).ToList();
     }
 
     public async Task<InvestmentHoldingDto?> GetByIdAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
@@ -292,8 +293,12 @@ public class InvestmentService : IInvestmentService
             c => c,
             c => _fxRateService.GetRateSeriesToEurAsync(c, from, to, cancellationToken),
             StringComparer.OrdinalIgnoreCase);
+        var splitTasks = symbols.ToDictionary(
+            s => s,
+            s => _marketDataProvider.GetSplitsAsync(s, cancellationToken),
+            StringComparer.OrdinalIgnoreCase);
 
-        await Task.WhenAll(priceTasks.Values.Cast<Task>().Concat(fxTasks.Values));
+        await Task.WhenAll(priceTasks.Values.Cast<Task>().Concat(fxTasks.Values).Concat(splitTasks.Values.Cast<Task>()));
 
         var emptyFx = new Dictionary<DateOnly, decimal>();
         var prepared = new List<HoldingSeries>();
@@ -301,7 +306,8 @@ public class InvestmentService : IInvestmentService
         {
             var prices = priceTasks.TryGetValue(h.ProviderSymbol, out var pt) ? pt.Result : (IReadOnlyList<PricePoint>)Array.Empty<PricePoint>();
             IReadOnlyDictionary<DateOnly, decimal> fxMap = fxTasks.TryGetValue(h.Currency, out var ft) ? ft.Result : emptyFx;
-            prepared.Add(BuildHoldingSeries(h, prices, fxMap, rates, quotes.GetValueOrDefault(h.ProviderSymbol)));
+            var splits = splitTasks.TryGetValue(h.ProviderSymbol, out var stk) ? stk.Result : NoSplits;
+            prepared.Add(BuildHoldingSeries(h, prices, fxMap, rates, quotes.GetValueOrDefault(h.ProviderSymbol), splits));
         }
 
         var totalDays = to.DayNumber - from.DayNumber;
@@ -328,25 +334,29 @@ public class InvestmentService : IInvestmentService
         return result;
     }
 
-    private static HoldingSeries BuildHoldingSeries(InvestmentHolding h, IReadOnlyList<PricePoint> prices, IReadOnlyDictionary<DateOnly, decimal> fxMap, IReadOnlyDictionary<string, decimal> rates, InstrumentQuote? quote)
+    private static HoldingSeries BuildHoldingSeries(InvestmentHolding h, IReadOnlyList<PricePoint> prices, IReadOnlyDictionary<DateOnly, decimal> fxMap, IReadOnlyDictionary<string, decimal> rates, InstrumentQuote? quote, IReadOnlyList<StockSplit> splits)
     {
         var s = new HoldingSeries { Prices = prices };
 
-        // Passos de quantidade/custo acumulados, por transação (ordenadas por data).
-        decimal qty = 0m, avgCostEur = 0m;
+        // Passos de quantidade/custo acumulados, por transação (ordenadas por data). As quantidades são
+        // ajustadas a splits (escala atual) porque os preços do Yahoo já vêm ajustados. Sem splits → fator 1.
+        decimal qty = 0m, avgCostEur = 0m, netAdjQty = 0m;
         foreach (var t in h.Transactions.OrderBy(t => t.Date).ThenBy(t => t.CreatedAt))
         {
+            var adjQty = SplitMath.AdjustQuantity(t.Quantity, splits, DateOnly.FromDateTime(t.Date));
             if (t.Operation == InvestmentOperation.Buy)
             {
                 var costEur = (t.Quantity * t.UnitPrice + t.Commission) * t.FxRateToEur * (1m + t.FxFeePercent / 100m);
-                var newQty = qty + t.Quantity;
+                var newQty = qty + adjQty;
                 avgCostEur = newQty != 0 ? (qty * avgCostEur + costEur) / newQty : 0m;
                 qty = newQty;
+                netAdjQty += adjQty;
             }
             else
             {
-                qty -= t.Quantity;
+                qty -= adjQty;
                 if (qty < 0) qty = 0m;
+                netAdjQty -= adjQty;
             }
             s.Steps.Add((DateOnly.FromDateTime(t.Date), qty, qty * avgCostEur));
         }
@@ -357,11 +367,11 @@ public class InvestmentService : IInvestmentService
             ? 1m
             : (rates.TryGetValue(h.Currency, out var r) ? r : 1m);
 
-        s.CurrentInvestedEur = qty * avgCostEur; // = NetQuantity × custo médio (EUR)
+        s.CurrentInvestedEur = qty * avgCostEur; // = quantidade líquida (ajustada) × custo médio (EUR)
         if (quote != null)
         {
             var quoteRate = rates.TryGetValue(quote.Currency, out var qr) ? qr : 1m;
-            s.CurrentValueEur = h.NetQuantity * quote.Price * quoteRate;
+            s.CurrentValueEur = netAdjQty * quote.Price * quoteRate;
         }
         return s;
     }
@@ -587,7 +597,8 @@ public class InvestmentService : IInvestmentService
     {
         var quotes = await GetQuoteMapAsync(new[] { holding.ProviderSymbol }, cancellationToken);
         var rates = await _fxRateService.GetRatesToEurAsync(cancellationToken);
-        return ToDto(holding, quotes.GetValueOrDefault(holding.ProviderSymbol), rates);
+        var splits = await _marketDataProvider.GetSplitsAsync(holding.ProviderSymbol, cancellationToken);
+        return ToDto(holding, quotes.GetValueOrDefault(holding.ProviderSymbol), rates, splits);
     }
 
     private async Task<Dictionary<string, InstrumentQuote>> GetQuoteMapAsync(IEnumerable<string> symbols, CancellationToken cancellationToken)
@@ -602,25 +613,51 @@ public class InvestmentService : IInvestmentService
         return user != null && user.HouseholdId.HasValue && user.HouseholdId.Value == householdId;
     }
 
+    /// <summary>Busca os splits de vários símbolos em paralelo (deduplicados). Falhas → lista vazia.</summary>
+    private async Task<Dictionary<string, IReadOnlyList<StockSplit>>> GetSplitsMapAsync(IEnumerable<string> symbols, CancellationToken cancellationToken)
+    {
+        var distinct = symbols.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var map = new Dictionary<string, IReadOnlyList<StockSplit>>(StringComparer.OrdinalIgnoreCase);
+        if (distinct.Count == 0) return map;
+
+        var tasks = distinct.ToDictionary(s => s, s => _marketDataProvider.GetSplitsAsync(s, cancellationToken), StringComparer.OrdinalIgnoreCase);
+        await Task.WhenAll(tasks.Values);
+        foreach (var kv in tasks) map[kv.Key] = kv.Value.Result;
+        return map;
+    }
+
+    private static readonly IReadOnlyList<StockSplit> NoSplits = Array.Empty<StockSplit>();
+
     private static DateTime ToUtc(DateTime value)
         => value.Kind == DateTimeKind.Utc ? value : DateTime.SpecifyKind(value, DateTimeKind.Utc);
 
-    private static InvestmentHoldingDto ToDto(InvestmentHolding h, InstrumentQuote? quote, IReadOnlyDictionary<string, decimal> rates)
+    private static InvestmentHoldingDto ToDto(InvestmentHolding h, InstrumentQuote? quote, IReadOnlyDictionary<string, decimal> rates, IReadOnlyList<StockSplit> splits)
     {
         decimal RateOf(string ccy) => rates.TryGetValue(ccy, out var r) ? r : 1m;
 
-        var netQty = h.NetQuantity;
-        var avgCost = h.AverageCost; // na moeda do instrumento, para apresentação
-
-        // Investido em EUR: cada compra é convertida à taxa do seu dia × (1 + fee do broker).
-        decimal buyCostEur = 0m, buyQty = 0m;
+        // Quantidades ajustadas a splits (escala atual): os preços do Yahoo já vêm ajustados, por isso
+        // a quantidade tem de acompanhar (cada transação × fator dos splits ocorridos depois dela).
+        // Sem splits, o fator é 1 e tudo fica igual ao comportamento anterior.
+        decimal netQty = 0m, buyQty = 0m, buyCostEur = 0m, buyCostCcy = 0m;
         foreach (var t in h.Transactions)
         {
-            if (t.Operation != InvestmentOperation.Buy) continue;
-            var costCcy = t.Quantity * t.UnitPrice + t.Commission;
-            buyCostEur += costCcy * t.FxRateToEur * (1m + t.FxFeePercent / 100m);
-            buyQty += t.Quantity;
+            var adjQty = SplitMath.AdjustQuantity(t.Quantity, splits, DateOnly.FromDateTime(t.Date));
+            if (t.Operation == InvestmentOperation.Buy)
+            {
+                var costCcy = t.Quantity * t.UnitPrice + t.Commission;
+                buyCostCcy += costCcy;
+                buyCostEur += costCcy * t.FxRateToEur * (1m + t.FxFeePercent / 100m);
+                buyQty += adjQty;
+                netQty += adjQty;
+            }
+            else
+            {
+                netQty -= adjQty;
+            }
         }
+
+        // Custo médio por unidade na escala atual (para bater com o preço atual). buyCost* não muda com splits.
+        var avgCost = buyQty > 0 ? buyCostCcy / buyQty : 0m; // na moeda do instrumento, para apresentação
         var avgCostEur = buyQty > 0 ? buyCostEur / buyQty : 0m;
         var investedEur = netQty * avgCostEur;
 
