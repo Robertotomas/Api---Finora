@@ -101,6 +101,54 @@ public class InvestmentsController : ControllerBase
         return Ok(history);
     }
 
+    /// <summary>Total líquido depositado na corretora (EUR) — métrica "Depósitos".</summary>
+    [HttpGet("deposits")]
+    [ProducesResponseType(typeof(InvestmentDepositsDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<InvestmentDepositsDto>> GetDeposits(CancellationToken cancellationToken)
+    {
+        if (UserId == null) return NotFound();
+        var householdId = await ResolveHouseholdIdAsync(cancellationToken);
+        if (householdId == null) return NotFound();
+        var summary = await _investmentService.GetDepositsSummaryAsync(householdId.Value, UserId.Value, cancellationToken);
+        return Ok(summary);
+    }
+
+    /// <summary>Adiciona um depósito à mão; debita opcionalmente uma conta. Devolve o total atualizado.</summary>
+    [HttpPost("deposits")]
+    [ProducesResponseType(typeof(InvestmentDepositsDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<InvestmentDepositsDto>> AddDeposit([FromBody] AddDepositRequest request, CancellationToken cancellationToken)
+    {
+        if (UserId == null) return NotFound();
+        var householdId = await ResolveHouseholdIdAsync(cancellationToken);
+        if (householdId == null) return NotFound();
+        var summary = await _investmentService.AddManualDepositAsync(request, householdId.Value, UserId.Value, cancellationToken);
+        return Ok(summary);
+    }
+
+    /// <summary>Edita um depósito (reconcilia o saldo da conta). Devolve o total atualizado.</summary>
+    [HttpPut("deposits/{id:guid}")]
+    [ProducesResponseType(typeof(InvestmentDepositsDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<InvestmentDepositsDto>> UpdateDeposit(Guid id, [FromBody] UpdateDepositRequest request, CancellationToken cancellationToken)
+    {
+        if (UserId == null) return NotFound();
+        var householdId = await ResolveHouseholdIdAsync(cancellationToken);
+        if (householdId == null) return NotFound();
+        var summary = await _investmentService.UpdateDepositAsync(id, request, householdId.Value, UserId.Value, cancellationToken);
+        return Ok(summary);
+    }
+
+    /// <summary>Elimina um depósito (devolve ao saldo o que tinha debitado). Devolve o total atualizado.</summary>
+    [HttpDelete("deposits/{id:guid}")]
+    [ProducesResponseType(typeof(InvestmentDepositsDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<InvestmentDepositsDto>> DeleteDeposit(Guid id, CancellationToken cancellationToken)
+    {
+        if (UserId == null) return NotFound();
+        var householdId = await ResolveHouseholdIdAsync(cancellationToken);
+        if (householdId == null) return NotFound();
+        var summary = await _investmentService.DeleteDepositAsync(id, householdId.Value, UserId.Value, cancellationToken);
+        return Ok(summary);
+    }
+
     /// <summary>Série de valor de uma posição (EUR) para o gráfico de evolução.</summary>
     [HttpGet("{id:guid}/history")]
     [ProducesResponseType(typeof(InvestmentHistoryDto), StatusCodes.Status200OK)]

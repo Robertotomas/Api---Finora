@@ -22,6 +22,12 @@ public record MarketQuote(
 /// <summary>Preço de fecho diário (histórico), na moeda do instrumento.</summary>
 public record PricePoint(DateOnly Date, decimal Close);
 
+/// <summary>
+/// Evento de desdobramento (stock split). <see cref="Ratio"/> = numerador/denominador
+/// (ex.: split 4:1 → 4). O preço divide por <see cref="Ratio"/> e a quantidade multiplica.
+/// </summary>
+public record StockSplit(DateOnly Date, decimal Ratio);
+
 public interface IMarketDataProvider
 {
     /// <summary>Pesquisa instrumentos por nome/símbolo (catálogo da Twelve Data).</summary>
@@ -32,6 +38,13 @@ public interface IMarketDataProvider
 
     /// <summary>Histórico de fechos diários (Yahoo) para um símbolo, ordenado por data asc. Vazio se falhar.</summary>
     Task<IReadOnlyList<PricePoint>> GetHistoryAsync(string providerSymbol, DateOnly from, DateOnly to, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Desdobramentos (stock splits) de um símbolo, ordenados por data asc. Vazio se não houver / falhar.
+    /// Os preços do Yahoo já vêm ajustados a splits, por isso a quantidade detida tem de ser ajustada
+    /// pelo mesmo fator para o valor bater certo.
+    /// </summary>
+    Task<IReadOnlyList<StockSplit>> GetSplitsAsync(string providerSymbol, CancellationToken cancellationToken = default);
 
     /// <summary>Resolve o domínio da marca de uma empresa (Logo.dev search), para o logo. Null se não houver / sem chave.</summary>
     Task<string?> ResolveBrandDomainAsync(string query, CancellationToken cancellationToken = default);
