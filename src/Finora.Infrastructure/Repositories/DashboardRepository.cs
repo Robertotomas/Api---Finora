@@ -371,10 +371,22 @@ public class DashboardRepository : IDashboardRepository
             })
             .ToListAsync(cancellationToken);
 
+        // Depósitos na corretora que debitaram a conta depois do período: baixaram o saldo sem criar
+        // Transaction, por isso também têm de ser desfeitos (efeito na conta = −Amount).
+        var depositDeltaByAccount = await _context.InvestmentDeposits
+            .AsNoTracking()
+            .Where(d => d.HouseholdId == householdId && d.Date >= firstDayAfterPeriod
+                        && d.AccountId != null && accountIds.Contains(d.AccountId!.Value))
+            .GroupBy(d => d.AccountId!.Value)
+            .Select(g => new { AccountId = g.Key, Delta = -g.Sum(d => d.Amount) })
+            .ToListAsync(cancellationToken);
+
         var deltaDict = new Dictionary<Guid, decimal>();
         foreach (var d in sourceDeltaByAccount)
             deltaDict[d.AccountId] = deltaDict.GetValueOrDefault(d.AccountId) + d.Delta;
         foreach (var d in destDeltaByAccount)
+            deltaDict[d.AccountId] = deltaDict.GetValueOrDefault(d.AccountId) + d.Delta;
+        foreach (var d in depositDeltaByAccount)
             deltaDict[d.AccountId] = deltaDict.GetValueOrDefault(d.AccountId) + d.Delta;
 
         return accounts.Select(a =>

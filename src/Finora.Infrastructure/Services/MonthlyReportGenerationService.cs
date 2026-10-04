@@ -21,7 +21,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
     /// changes layout — the background generator re-renders any stored report whose
     /// <see cref="MonthlyReport.TemplateVersion"/> is lower, so existing PDFs pick up the new layout.
     /// </summary>
-    public const int CurrentTemplateVersion = 3;
+    public const int CurrentTemplateVersion = 4; // v4: formato pt-PT explícito, "€", título+gráfico juntos
 
     private readonly IDashboardService _dashboardService;
     private readonly IMonthlyReportRepository _monthlyReportRepository;
@@ -95,41 +95,16 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
             var tz = ResolveTimeZone(anchorUser.TimeZoneId);
             var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
 
-            // Only generate reports from the month the paid plan started
+            // Relatórios desde o mês em que o plano pago começou (inclusive) até ao último mês fechado.
             var planStart = await _subscriptionService.GetPaidPlanStartDateAsync(householdId, cancellationToken);
             var startDate = planStart ?? anchorUser.CreatedAt;
-            var startYear = startDate.Year;
-            var startMonth = startDate.Month;
 
-            // Iterate from the month after creation up to last month
-            var currentYear = localNow.Year;
-            var currentMonth = localNow.Month;
+            _logger.LogInformation("Household {Id}: plan start {Year}-{Month:00}, checking up to {CurYear}-{CurMonth:00} (exclusive)",
+                householdId, startDate.Year, startDate.Month, localNow.Year, localNow.Month);
 
-            _logger.LogInformation("Household {Id}: created {Year}-{Month:00}, checking up to {CurYear}-{CurMonth:00}",
-                householdId, startYear, startMonth, currentYear, currentMonth);
-
-            var checkYear = startYear;
-            var checkMonth = startMonth;
-
-            while (true)
+            foreach (var (reportYear, reportMonth) in ReportSchedule.DueMonths(startDate, localNow))
             {
-                // Advance to next month
-                checkMonth++;
-                if (checkMonth > 12)
-                {
-                    checkMonth = 1;
-                    checkYear++;
-                }
-
-                // Stop if we've reached the current month (can't generate for current/future months)
-                if (checkYear > currentYear || (checkYear == currentYear && checkMonth >= currentMonth))
-                    break;
-
                 cancellationToken.ThrowIfCancellationRequested();
-
-                // reportYear/reportMonth = the month we want to generate the report for
-                var reportYear = checkYear;
-                var reportMonth = checkMonth;
 
                 var existing = (await _monthlyReportRepository.ListByHouseholdAsync(householdId, reportYear, reportMonth, cancellationToken))
                     .FirstOrDefault();
@@ -479,7 +454,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         sb.AppendLine(".sankey-center-label{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;background:#fff;padding:4px 6px;border-radius:6px;}");
         sb.AppendLine(".sankey-center-amount{font-size:12px;font-weight:700;color:#334155;white-space:nowrap;}");
         sb.AppendLine(".sankey-center-sub{font-size:9px;color:#94a3b8;}");
-        sb.AppendLine("@media print{.panel{break-inside:avoid;}.panel-breakable{break-inside:auto;}.panel-breakable .cat-chart{break-inside:avoid;}.panel-breakable .cat-table{break-inside:auto;}.kpis{break-inside:avoid;}}");
+        sb.AppendLine("@media print{.panel{break-inside:avoid;}.panel-breakable{break-inside:auto;}.panel-breakable .cat-chart{break-inside:avoid;}.panel-breakable .cat-table{break-inside:auto;}.keep-together{break-inside:avoid;}.kpis{break-inside:avoid;}}");
         sb.AppendLine("</style>");
         sb.AppendLine("<script src=\"https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js\"></script>");
         sb.AppendLine("</head><body>");
@@ -510,9 +485,9 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
                 var saldoColor = r.Savings < 0 ? "#dc2626" : "#166534";
                 sb.AppendLine(
                     $"<tr><td>{System.Net.WebUtility.HtmlEncode(r.Name)}</td>" +
-                    $"<td style=\"text-align:right\">{r.Income:N2} {d.Currency}</td>" +
-                    $"<td style=\"text-align:right\">{r.Expenses:N2} {d.Currency}</td>" +
-                    $"<td style=\"text-align:right;font-weight:600;color:{saldoColor}\">{r.Savings:N2} {d.Currency}</td></tr>");
+                    $"<td style=\"text-align:right\">{Money(r.Income, d.Currency)}</td>" +
+                    $"<td style=\"text-align:right\">{Money(r.Expenses, d.Currency)}</td>" +
+                    $"<td style=\"text-align:right;font-weight:600;color:{saldoColor}\">{Money(r.Savings, d.Currency)}</td></tr>");
             }
             sb.AppendLine("</tbody></table>");
 
@@ -539,7 +514,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
                 {
                     if (r.Expenses > 0)
                     {
-                        var pct = ((double)(r.Expenses / totalExp) * 100).ToString("0.#", CultureInfo.InvariantCulture);
+                        var pct = ((double)(r.Expenses / totalExp) * 100).ToString("0.#", PtPt); // legenda: vírgula pt-PT
                         var color = r.Name == "Sem responsável" ? "#94a3b8" : palette[idx % palette.Length];
                         sb.AppendLine($"<span style=\"display:inline-flex;align-items:center;gap:5px\"><span style=\"width:10px;height:10px;border-radius:2px;background:{color};display:inline-block\"></span>{System.Net.WebUtility.HtmlEncode(r.Name)} {pct}%</span>");
                     }
@@ -553,25 +528,28 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         // ── Receitas: pie chart on top + detail table below ──
         var incomeStacked = d.IncomeByCategory.Count > 6;
         sb.AppendLine(incomeStacked ? "<div class=\"panel panel-breakable\">" : "<div class=\"panel\">");
-        sb.AppendLine("<h2>Receitas por categoria</h2>");
+        // Título + gráfico nunca se separam numa quebra de página (só a tabela pode continuar na seguinte).
+        sb.AppendLine("<div class=\"keep-together\"><h2>Receitas por categoria</h2>");
         sb.AppendLine("<div class=\"cat-row cat-stacked\">");
-        sb.AppendLine("<div class=\"cat-chart\"><canvas id=\"cInc\"></canvas></div>");
+        sb.AppendLine("<div class=\"cat-chart\"><canvas id=\"cInc\"></canvas></div></div></div>");
+        sb.AppendLine("<div class=\"cat-row cat-stacked\">");
         sb.AppendLine("<div class=\"cat-table\">");
         sb.AppendLine("<table><thead><tr><th>Categoria</th><th>Valor</th><th>%</th></tr></thead><tbody>");
         foreach (var row in d.IncomeByCategory)
-            sb.AppendLine($"<tr><td>{System.Net.WebUtility.HtmlEncode(row.CategoryName)}</td><td>{row.Amount:N2} {d.Currency}</td><td>{row.Percentage:N1}%</td></tr>");
+            sb.AppendLine($"<tr><td>{System.Net.WebUtility.HtmlEncode(row.CategoryName)}</td><td>{Money(row.Amount, d.Currency)}</td><td>{Pct(row.Percentage)}</td></tr>");
         sb.AppendLine("</tbody></table></div></div></div>");
 
         // ── Despesas: pie chart on top + detail table below ──
         var expenseStacked = d.ExpensesByCategory.Count > 6;
         sb.AppendLine(expenseStacked ? "<div class=\"panel panel-breakable\">" : "<div class=\"panel\">");
-        sb.AppendLine("<h2>Despesas por categoria</h2>");
+        sb.AppendLine("<div class=\"keep-together\"><h2>Despesas por categoria</h2>");
         sb.AppendLine("<div class=\"cat-row cat-stacked\">");
-        sb.AppendLine("<div class=\"cat-chart\"><canvas id=\"cExp\"></canvas></div>");
+        sb.AppendLine("<div class=\"cat-chart\"><canvas id=\"cExp\"></canvas></div></div></div>");
+        sb.AppendLine("<div class=\"cat-row cat-stacked\">");
         sb.AppendLine("<div class=\"cat-table\">");
         sb.AppendLine("<table><thead><tr><th>Categoria</th><th>Valor</th><th>%</th></tr></thead><tbody>");
         foreach (var row in d.ExpensesByCategory)
-            sb.AppendLine($"<tr><td>{System.Net.WebUtility.HtmlEncode(row.CategoryName)}</td><td>{row.Amount:N2} {d.Currency}</td><td>{row.Percentage:N1}%</td></tr>");
+            sb.AppendLine($"<tr><td>{System.Net.WebUtility.HtmlEncode(row.CategoryName)}</td><td>{Money(row.Amount, d.Currency)}</td><td>{Pct(row.Percentage)}</td></tr>");
         sb.AppendLine("</tbody></table></div></div></div>");
 
         // ── Sankey: income categories → total → expense categories ──
@@ -592,7 +570,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
                 var nameCell = logoUrl != null
                     ? $"<span class=\"acc\"><img class=\"acc-logo\" src=\"{System.Net.WebUtility.HtmlEncode(logoUrl)}\" alt=\"\"/>{System.Net.WebUtility.HtmlEncode(a.Name)}</span>"
                     : System.Net.WebUtility.HtmlEncode(a.Name);
-                sb.AppendLine($"<tr><td>{nameCell}</td><td style=\"text-align:right;font-weight:600\">{a.Balance:N2} {a.Currency}</td></tr>");
+                sb.AppendLine($"<tr><td>{nameCell}</td><td style=\"text-align:right;font-weight:600\">{Money(a.Balance, a.Currency)}</td></tr>");
             }
             sb.AppendLine("</tbody></table></div>");
         }
@@ -674,7 +652,7 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
         // makePath — filled shape with bezier curves (same as dashboard makeSankeyPath)
         sb.AppendLine("function makePath(sy,sH,dy,dH,w){const cx=w*0.5;return 'M0,'+sy+' C'+cx+','+sy+' '+cx+','+dy+' '+w+','+dy+' L'+w+','+(dy+dH)+' C'+cx+','+(dy+dH)+' '+cx+','+(sy+sH)+' 0,'+(sy+sH)+' Z';}");
         sb.AppendLine("function hexRgba(hex,a){const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return 'rgba('+r+','+g+','+b+','+a+')';}");
-        sb.AppendLine("function fmt(v){return v.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+' EUR';}");
+        sb.AppendLine("function fmt(v){return v.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';}");
         // Build income links (income nodes → center)
         sb.AppendLine("const incTotal=incNodes.reduce((s,n)=>s+n.h,0);let incDestY=centerTop;");
         sb.AppendLine("const incLinks=incNodes.map(n=>{const dH=(n.h/incTotal)*centerH;const p=makePath(n.y,n.h,incDestY,dH,svgW);incDestY+=dH;return{path:p,color:hexRgba(n.color,0.35)};});");
@@ -719,8 +697,32 @@ public class MonthlyReportGenerationService : IMonthlyReportGenerationService
     }
 
     private static string Kpi(string label, decimal value, string currency, string icon, string variant)
-        => $"<div class=\"kpi\"><div class=\"kpi-header\"><span class=\"kpi-label\">{System.Net.WebUtility.HtmlEncode(label)}</span><span class=\"kpi-icon kpi-icon--{variant}\">{icon}</span></div><div class=\"kpi-val\">{value:N2} {System.Net.WebUtility.HtmlEncode(currency)}</div></div>";
+        => $"<div class=\"kpi\"><div class=\"kpi-header\"><span class=\"kpi-label\">{System.Net.WebUtility.HtmlEncode(label)}</span><span class=\"kpi-icon kpi-icon--{variant}\">{icon}</span></div><div class=\"kpi-val\">{Money(value, currency)}</div></div>";
 
     private static string KpiPlain(string label, decimal value, string currency)
-        => $"<div class=\"kpi\"><div class=\"kpi-header\"><span class=\"kpi-label\">{System.Net.WebUtility.HtmlEncode(label)}</span></div><div class=\"kpi-val\">{value:N2} {System.Net.WebUtility.HtmlEncode(currency)}</div></div>";
+        => $"<div class=\"kpi\"><div class=\"kpi-header\"><span class=\"kpi-label\">{System.Net.WebUtility.HtmlEncode(label)}</span></div><div class=\"kpi-val\">{Money(value, currency)}</div></div>";
+
+    private static readonly CultureInfo PtPt = CultureInfo.GetCultureInfo("pt-PT");
+    // Igual ao Intl 'pt-PT' do browser (app e gráficos do relatório): sem separador de milhares abaixo de 10 000.
+    private static readonly NumberFormatInfo PtPtNoGrouping = CreateNoGrouping();
+    private static NumberFormatInfo CreateNoGrouping()
+    {
+        var nf = (NumberFormatInfo)PtPt.NumberFormat.Clone();
+        nf.NumberGroupSeparator = string.Empty;
+        return nf;
+    }
+
+    /// <summary>
+    /// Valor monetário em pt-PT, independente da cultura da máquina (no servidor Linux a cultura por defeito
+    /// daria "2,250.00"). "1 234,56 €" para EUR; outras moedas mantêm o código ("1 234,56 USD").
+    /// </summary>
+    public static string Money(decimal value, string currency)
+    {
+        var nf = Math.Abs(value) < 10_000m ? PtPtNoGrouping : PtPt.NumberFormat;
+        var number = value.ToString("N2", nf);
+        return string.Equals(currency, "EUR", StringComparison.OrdinalIgnoreCase) ? $"{number} €" : $"{number} {currency}";
+    }
+
+    /// <summary>Percentagem em pt-PT ("55,6%").</summary>
+    public static string Pct(decimal value) => $"{value.ToString("N1", PtPt)}%";
 }

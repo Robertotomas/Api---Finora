@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Finora.Application.DTOs.Dashboard;
 using Finora.Application.Interfaces;
 using Finora.Domain.Enums;
+using Finora.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -19,6 +20,7 @@ public class DashboardController : ControllerBase
     private readonly IAccountRepository _accountRepository;
     private readonly IAssetRepository _assetRepository;
     private readonly IInvestmentService _investmentService;
+    private readonly IInvestmentRepository _investmentRepository;
 
     public DashboardController(
         IDashboardService dashboardService,
@@ -27,8 +29,10 @@ public class DashboardController : ControllerBase
         IRecurringTransactionRepository recurringRepository,
         IAccountRepository accountRepository,
         IAssetRepository assetRepository,
-        IInvestmentService investmentService)
+        IInvestmentService investmentService,
+        IInvestmentRepository investmentRepository)
     {
+        _investmentRepository = investmentRepository;
         _dashboardService = dashboardService;
         _householdService = householdService;
         _dashboardRepository = dashboardRepository;
@@ -138,8 +142,17 @@ public class DashboardController : ControllerBase
             var activeAccounts = accounts.Where(a => !a.IsArchived).ToList();
 
             // 2. Get ALL real transactions (not just in range) to compute initial balances per account
-            var allTransactions = await _dashboardRepository.GetTransactionsWithAccountInRangeAsync(
-                householdId.Value, DateTime.MinValue, today.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc), cancellationToken);
+            var allTransactions = (await _dashboardRepository.GetTransactionsWithAccountInRangeAsync(
+                householdId.Value, DateTime.MinValue, today.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc), cancellationToken)).ToList();
+
+            // 2b. Depósitos na corretora que debitaram uma conta: baixaram o saldo sem criar Transaction.
+            //     Entram aqui como saída (só efeito no saldo, na data do depósito) para os saldos passados
+            //     não ficarem mais baixos antes do depósito. O dinheiro passa a contar como "por investir" (5c).
+            var investmentDeposits = await _investmentRepository.GetDepositsByHouseholdIdAsync(householdId.Value, cancellationToken);
+            var todayEndDt = today.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            allTransactions.AddRange(investmentDeposits
+                .Where(d => d.AccountId.HasValue && d.Date < todayEndDt)
+                .Select(d => new TransactionWithAccountSnapshot(d.Date, TransactionType.Expense, d.Amount, d.AccountId!.Value, null)));
 
             // 3. Compute initial balance per account: Balance - sum of all transaction effects
             //    Also find the earliest transaction date per account
@@ -240,9 +253,20 @@ public class DashboardController : ControllerBase
                 var holdings = await _investmentService.GetByHouseholdAsync(householdId.Value, uid, cancellationToken);
                 // Só posições abertas (quantidade > 0); fechadas/negativas não contam para o património.
                 investmentsTotalEur = holdings.Where(h => h.Quantity > 0).Sum(h => h.CurrentValueEur ?? h.InvestedEur);
-                // + dinheiro parado na corretora (depositado e ainda não investido) — também é património.
-                var deposits = await _investmentService.GetDepositsSummaryAsync(householdId.Value, uid, cancellationToken);
-                investmentsTotalEur += deposits.UninvestedCashEur;
+            }
+
+            // Dinheiro parado na corretora (depositado e ainda não investido) À DATA de cada dia — também é
+            // património. Tem de variar no tempo (não constante): antes do depósito o dinheiro ainda estava na
+            // conta (2b), e somá-lo também aqui contava-o a dobrar. Montantes tratados como EUR (depósitos
+            // manuais são sempre EUR; os da XTB também).
+            var brokerTxs = (await _investmentRepository.GetByHouseholdIdAsync(householdId.Value, cancellationToken))
+                .SelectMany(h => h.Transactions).ToList();
+            decimal BrokerCashOn(DateOnly day)
+            {
+                var deps = investmentDeposits.Where(d => DateOnly.FromDateTime(d.Date) <= day).ToList();
+                if (deps.Count == 0) return 0m;
+                return BrokerCashMath.UninvestedCashEur(true, deps.Sum(d => d.Amount),
+                    brokerTxs.Where(t => DateOnly.FromDateTime(t.Date) <= day));
             }
 
             // 6. Build cumulative transaction effects per account up to each day (forward approach)
@@ -334,8 +358,8 @@ public class DashboardController : ControllerBase
 
                 // Add the value of all assets as of this day (Património Total inclui bens e valores).
                 balance += AssetsValueOn(d);
-                // Investimentos: valor atual total (constante na janela).
-                balance += investmentsTotalEur;
+                // Investimentos: valor atual das posições (constante na janela) + dinheiro por investir nesse dia.
+                balance += investmentsTotalEur + BrokerCashOn(d);
 
                 points.Add(new { date = d.ToString("yyyy-MM-dd"), balance = Math.Round(balance, 2) });
             }
