@@ -569,6 +569,8 @@ public class InvestmentService : IInvestmentService
         }
         dto.TotalEur = total;
         dto.Count = deposits.Count;
+        var holdings = await _investmentRepository.GetByHouseholdIdAsync(householdId, cancellationToken);
+        dto.UninvestedCashEur = BrokerCashMath.UninvestedCashEur(true, total, holdings.SelectMany(h => h.Transactions));
         dto.Items = deposits
             .OrderByDescending(d => d.Date).ThenByDescending(d => d.CreatedAt)
             .Select(d => new InvestmentDepositItemDto

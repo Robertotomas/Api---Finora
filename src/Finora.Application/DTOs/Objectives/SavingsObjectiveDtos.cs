@@ -27,6 +27,8 @@ public record SavingsObjectivesOverviewDto
 {
     public decimal TotalSavings { get; init; }
     public decimal ReservedByCompletedObjectives { get; init; }
+    /// <summary>Poupança já enviada para investir (depósitos que debitaram uma conta); sai do disponível.</summary>
+    public decimal InvestedFromSavings { get; init; }
     public decimal AvailableForActiveObjectives { get; init; }
     public IReadOnlyList<SavingsObjectiveActiveDto> ActiveObjectives { get; init; } = [];
     public IReadOnlyList<SavingsObjectiveHistoryDto> HistoryObjectives { get; init; } = [];

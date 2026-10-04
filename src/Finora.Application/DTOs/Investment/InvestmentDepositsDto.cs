@@ -6,6 +6,12 @@ public class InvestmentDepositsDto
     /// <summary>Total líquido depositado (depósitos − levantamentos), convertido para EUR.</summary>
     public decimal TotalEur { get; set; }
 
+    /// <summary>
+    /// Dinheiro parado na corretora (depósitos − compras + vendas, ≥ 0; 0 sem depósitos registados).
+    /// Conta para o Património Total.
+    /// </summary>
+    public decimal UninvestedCashEur { get; set; }
+
     /// <summary>Nº de movimentos considerados.</summary>
     public int Count { get; set; }
 

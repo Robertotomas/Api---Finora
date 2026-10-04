@@ -11,19 +11,22 @@ public class SavingsObjectiveService : ISavingsObjectiveService
     private readonly IRecurringTransactionRepository _recurringRepository;
     private readonly IUserRepository _userRepository;
     private readonly ISubscriptionService _subscriptionService;
+    private readonly IInvestmentRepository _investmentRepository;
 
     public SavingsObjectiveService(
         ISavingsObjectiveRepository objectivesRepository,
         IDashboardRepository dashboardRepository,
         IRecurringTransactionRepository recurringRepository,
         IUserRepository userRepository,
-        ISubscriptionService subscriptionService)
+        ISubscriptionService subscriptionService,
+        IInvestmentRepository investmentRepository)
     {
         _objectivesRepository = objectivesRepository;
         _dashboardRepository = dashboardRepository;
         _recurringRepository = recurringRepository;
         _userRepository = userRepository;
         _subscriptionService = subscriptionService;
+        _investmentRepository = investmentRepository;
     }
 
     public async Task<SavingsObjectivesOverviewDto> GetOverviewAsync(Guid householdId, Guid userId, CancellationToken cancellationToken = default)
@@ -181,20 +184,13 @@ public class SavingsObjectiveService : ISavingsObjectiveService
         IReadOnlyList<SavingsObjective> objectives,
         CancellationToken cancellationToken)
     {
-        var totalSavings = await ComputeTotalSavingsThroughLastClosedMonthAsync(householdId, cancellationToken);
+        var (totalSavings, reservedByCompleted, investedFromSavings, availablePool) =
+            await ComputePoolAsync(householdId, objectives, cancellationToken);
 
         var completed = objectives
             .Where(x => x.CompletedAt.HasValue)
             .OrderByDescending(x => x.CompletedAt)
             .ToList();
-        // "Reservado" = objetivos concluídos ainda NÃO liquidados: o dinheiro está
-        // apartado para esse objetivo e não pode ser usado por outros, mas ainda não
-        // foi gasto. Os liquidados JÁ foram gastos através de uma despesa real (o fluxo
-        // de liquidação obriga a registar a despesa), por isso já baixaram a poupança
-        // acumulada — NÃO os voltamos a subtrair aqui, senão estaríamos a contar o
-        // gasto a dobrar.
-        var reservedByCompleted = completed.Where(x => !x.LiquidatedAt.HasValue).Sum(x => x.TargetAmount);
-        var availablePool = Math.Max(0m, totalSavings - reservedByCompleted);
 
         var active = objectives
             .Where(x => !x.CompletedAt.HasValue)
@@ -238,6 +234,7 @@ public class SavingsObjectiveService : ISavingsObjectiveService
         {
             TotalSavings = totalSavings,
             ReservedByCompletedObjectives = reservedByCompleted,
+            InvestedFromSavings = investedFromSavings,
             AvailableForActiveObjectives = availablePool,
             ActiveObjectives = activeDtos,
             HistoryObjectives = historyDtos
@@ -275,18 +272,41 @@ public class SavingsObjectiveService : ISavingsObjectiveService
         return income - expenses;
     }
 
-    private async Task<Dictionary<Guid, decimal>> BuildActiveAllocationsAsync(
+    /// <summary>
+    /// Bolsa disponível para os objetivos ativos = poupança − reservado − investido (clamp ≥ 0).
+    /// <para>
+    /// "Reservado" = objetivos concluídos ainda NÃO liquidados: o dinheiro está apartado para esse
+    /// objetivo, mas ainda não foi gasto. Os liquidados JÁ foram gastos através de uma despesa real
+    /// (o fluxo de liquidação obriga a registá-la), por isso já baixaram a poupança — NÃO se voltam a
+    /// subtrair (contaria a dobrar).
+    /// </para>
+    /// <para>
+    /// "Investido" = depósitos na corretora que <b>debitaram uma conta</b>: é poupança que já foi
+    /// alocada a investimentos, por isso deixa de estar livre para objetivos. Depósitos sem conta
+    /// (importados do extrato ou dinheiro de fora, ex.: presente) não saíram da poupança registada e
+    /// não contam. Ao contrário da poupança (até ao último mês fechado), conta logo — o dinheiro já saiu.
+    /// </para>
+    /// </summary>
+    private async Task<(decimal TotalSavings, decimal Reserved, decimal Invested, decimal Pool)> ComputePoolAsync(
         Guid householdId,
         IReadOnlyList<SavingsObjective> objectives,
         CancellationToken cancellationToken)
     {
         var totalSavings = await ComputeTotalSavingsThroughLastClosedMonthAsync(householdId, cancellationToken);
-        // Só os concluídos NÃO liquidados reservam dinheiro. Os liquidados já foram
-        // gastos via despesa real (já refletida na poupança) — ver BuildOverviewAsync.
-        var reservedByCompleted = objectives
+        var reserved = objectives
             .Where(x => x.CompletedAt.HasValue && !x.LiquidatedAt.HasValue)
             .Sum(x => x.TargetAmount);
-        var pool = Math.Max(0m, totalSavings - reservedByCompleted);
+        var deposits = await _investmentRepository.GetDepositsByHouseholdIdAsync(householdId, cancellationToken);
+        var invested = Math.Max(0m, deposits.Where(d => d.AccountId.HasValue).Sum(d => d.Amount));
+        return (totalSavings, reserved, invested, Math.Max(0m, totalSavings - reserved - invested));
+    }
+
+    private async Task<Dictionary<Guid, decimal>> BuildActiveAllocationsAsync(
+        Guid householdId,
+        IReadOnlyList<SavingsObjective> objectives,
+        CancellationToken cancellationToken)
+    {
+        var (_, _, _, pool) = await ComputePoolAsync(householdId, objectives, cancellationToken);
 
         var active = objectives
             .Where(x => !x.CompletedAt.HasValue)
